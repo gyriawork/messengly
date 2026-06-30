@@ -9,6 +9,31 @@ import IORedis from 'ioredis';
 import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
 
+// Common MIME → extension map; falls back to the subtype (e.g. image/webp → webp).
+const MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'application/pdf': 'pdf',
+};
+
+/**
+ * Ensure a file name has an extension so Telegram can detect the media type.
+ * Without an extension, images are sent as un-openable "attachment" documents.
+ */
+function ensureFileExtension(name: string | undefined, mimeType: string | undefined): string {
+  const base = name && name.trim() ? name.trim() : 'file';
+  if (/\.[a-z0-9]{2,5}$/i.test(base)) return base; // already has an extension
+  const mime = (mimeType || '').toLowerCase();
+  const ext = MIME_EXT[mime] || mime.split('/')[1]?.split('+')[0] || '';
+  return ext ? `${base}.${ext}` : base;
+}
+
 // ─── Types ───
 
 export interface TelegramCredentials {
@@ -249,12 +274,19 @@ export class TelegramAdapter implements MessengerAdapter {
             const response = await fetch(fileUrl);
             if (!response.ok) throw new Error(`Failed to download attachment: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
-            const customFile = new CustomFile(attachment.filename, buffer.length, '', buffer);
+
+            // Ensure the file name carries an extension so Telegram detects the
+            // media type. Images are sent as photos (viewable inline) rather
+            // than as documents named "attachment" that can't be opened.
+            const isImage = (attachment.mimeType || '').toLowerCase().startsWith('image/');
+            const fileName = ensureFileExtension(attachment.filename, attachment.mimeType);
+            const customFile = new CustomFile(fileName, buffer.length, '', buffer);
 
             const result = await this.client!.sendFile(peer, {
               file: customFile,
               caption: i === 0 ? text : '',
               replyTo: i === 0 ? replyTo : undefined,
+              forceDocument: !isImage,
             });
 
             if (i === 0) {
