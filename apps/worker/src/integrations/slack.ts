@@ -158,34 +158,43 @@ export class SlackAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // Upload attachments first (if any)
+      // With attachments: upload all files in one call, with the text as the
+      // comment, so a mix of image + PDF (or several files) lands together in a
+      // single message. Requires the bot "files:write" scope.
       if (options?.attachments && options.attachments.length > 0) {
-        for (const attachment of options.attachments) {
-          try {
+        try {
+          const fileUploads = [];
+          for (const attachment of options.attachments) {
             const fileUrl = attachment.url.startsWith('http')
               ? attachment.url
               : `${process.env.API_URL || process.env.APP_URL || 'http://localhost:3000'}${attachment.url}`;
             const response = await fetch(fileUrl);
             if (!response.ok) throw new Error(`Failed to download attachment: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const uploadArgs: any = {
-              channel_id: externalChatId,
-              file: buffer,
-              filename: attachment.filename,
-            };
-            if (options?.replyToExternalId) {
-              uploadArgs.thread_ts = options.replyToExternalId;
-            }
-            await this.client!.filesUploadV2(uploadArgs);
-          } catch (fileErr) {
-            const msg = fileErr instanceof Error ? fileErr.message : String(fileErr);
-            const friendly = msg.includes('missing_scope')
-              ? 'Slack image upload failed: the bot is missing the "files:write" scope. Add it in your Slack app (OAuth & Permissions → Bot Token Scopes), reinstall the app, then reconnect Slack.'
-              : `Slack image upload failed: ${msg}`;
-            console.warn(`Failed to upload Slack attachment ${attachment.filename}:`, fileErr);
-            throw new MessengerError('slack', fileErr, friendly);
+            fileUploads.push({ file: buffer, filename: attachment.filename || 'file' });
           }
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const uploadArgs: any = {
+            channel_id: externalChatId,
+            file_uploads: fileUploads,
+          };
+          if (text) uploadArgs.initial_comment = text;
+          if (options?.replyToExternalId) uploadArgs.thread_ts = options.replyToExternalId;
+
+          const up = await this.client!.filesUploadV2(uploadArgs);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const files = (up as any)?.files ?? [];
+          const fileId = files?.[0]?.id ?? files?.[0]?.files?.[0]?.id;
+          return { externalMessageId: fileId ? String(fileId) : `slack-upload-${Date.now()}` };
+        } catch (fileErr) {
+          if (fileErr instanceof MessengerError) throw fileErr;
+          const msg = fileErr instanceof Error ? fileErr.message : String(fileErr);
+          const friendly = msg.includes('missing_scope')
+            ? 'Slack file upload failed: the bot is missing the "files:write" scope. Add it under Bot Token Scopes in your Slack app (OAuth & Permissions), reinstall the app, then reconnect Slack.'
+            : `Slack file upload failed: ${msg}`;
+          console.warn('Failed to upload Slack attachments:', fileErr);
+          throw new MessengerError('slack', fileErr, friendly);
         }
       }
 

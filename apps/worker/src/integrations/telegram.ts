@@ -261,9 +261,26 @@ export class TelegramAdapter implements MessengerAdapter {
       const peer = await this.resolvePeer(externalChatId);
       const replyTo = options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined;
 
-      // Send attachments (if any) — first attachment carries the text as caption
+      // Send attachments (if any). Supports multiple files of mixed types —
+      // images go as photos, everything else as documents.
       if (options?.attachments && options.attachments.length > 0) {
         let firstMessageId: string | undefined;
+
+        // Telegram media captions are capped at 1024 chars. If the text fits it
+        // rides as the first attachment's caption; if it's longer it's sent as
+        // its own message first (otherwise MEDIA_CAPTION_TOO_LONG drops the media).
+        const TG_CAPTION_MAX = 1024;
+        const useCaption = !!text && text.length <= TG_CAPTION_MAX;
+        let sentSeparateText = false;
+        if (text && !useCaption) {
+          try {
+            const tm = await this.client!.sendMessage(peer, { message: text, replyTo });
+            firstMessageId = tm.id.toString();
+            sentSeparateText = true;
+          } catch (textErr) {
+            console.warn(`[Telegram] Failed to send long text before attachments to ${externalChatId}:`, textErr instanceof Error ? textErr.message : textErr);
+          }
+        }
 
         for (let i = 0; i < options.attachments.length; i++) {
           const attachment = options.attachments[i];
@@ -284,12 +301,13 @@ export class TelegramAdapter implements MessengerAdapter {
 
             const result = await this.client!.sendFile(peer, {
               file: customFile,
-              caption: i === 0 ? text : '',
-              replyTo: i === 0 ? replyTo : undefined,
+              // Caption only on the first file, and only when it fits.
+              caption: i === 0 && useCaption ? text : '',
+              replyTo: i === 0 && !sentSeparateText ? replyTo : undefined,
               forceDocument: !isImage,
             });
 
-            if (i === 0) {
+            if (!firstMessageId) {
               firstMessageId = result.id.toString();
             }
           } catch (fileErr) {
@@ -297,7 +315,7 @@ export class TelegramAdapter implements MessengerAdapter {
           }
         }
 
-        // If all attachment sends failed, fall back to text-only
+        // If nothing went out at all, fall back to text-only.
         if (!firstMessageId && text) {
           const result = await this.client!.sendMessage(peer, {
             message: text,
