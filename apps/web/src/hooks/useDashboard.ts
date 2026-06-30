@@ -35,14 +35,16 @@ interface ActivityResponse {
 
 export function useDashboardStats(scope?: 'org' | 'my') {
   const scopeParam = scope === 'my' ? '&scope=my' : '';
-  const scopeQuery = scope === 'my' ? '?scope=my' : '';
 
   return useQuery({
     queryKey: ['dashboard-stats', scope ?? 'default'],
     queryFn: async (): Promise<DashboardStats> => {
       const [chatsData, broadcastsData, integrationsData, analyticsData, activityData] =
         await Promise.allSettled([
-          api.get<ChatsResponse>(`/api/chats${scopeQuery}`),
+          // Chats are an org-wide resource (imported by the superadmin), so the
+          // per-messenger counts must not be scoped to the viewer. High limit so
+          // every chat is counted, not just the first page.
+          api.get<ChatsResponse>(`/api/chats?limit=1000`),
           api.get<BroadcastsResponse>('/api/broadcasts'),
           api.get<IntegrationsResponse>('/api/integrations'),
           api.get<AnalyticsResponse>(`/api/broadcasts/analytics?period=30d${scopeParam}`),

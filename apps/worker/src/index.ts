@@ -4,6 +4,7 @@ import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
 import { ensureChat } from './services/chat-service.js';
+import { emojify } from 'node-emoji';
 type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
 
 const DEFAULT_ANTIBAN: Record<Messenger, {
@@ -200,6 +201,10 @@ async function sendMessengerBatch(
 ): Promise<{ sent: number; failed: number }> {
   const messenger = messengerChats[0]?.chat.messenger;
   if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0 };
+
+  // Convert Slack-style :emoji: shortcodes to real Unicode emoji so they render
+  // correctly in every messenger (Telegram shows the raw code otherwise).
+  messageText = emojify(messageText);
 
   // Find integration credentials for this messenger + org
   const integration = await prisma.integration.findFirst({

@@ -179,7 +179,12 @@ export class SlackAdapter implements MessengerAdapter {
             }
             await this.client!.filesUploadV2(uploadArgs);
           } catch (fileErr) {
+            const msg = fileErr instanceof Error ? fileErr.message : String(fileErr);
+            const friendly = msg.includes('missing_scope')
+              ? 'Slack image upload failed: the bot is missing the "files:write" scope. Add it in your Slack app (OAuth & Permissions → Bot Token Scopes), reinstall the app, then reconnect Slack.'
+              : `Slack image upload failed: ${msg}`;
             console.warn(`Failed to upload Slack attachment ${attachment.filename}:`, fileErr);
+            throw new MessengerError('slack', fileErr, friendly);
           }
         }
       }
@@ -196,6 +201,9 @@ export class SlackAdapter implements MessengerAdapter {
 
       return { externalMessageId: result.ts };
     } catch (err) {
+      // Preserve specific errors (e.g. the attachment/scope message) instead of
+      // masking them with a generic one.
+      if (err instanceof MessengerError) throw err;
       this.handleSlackError(err);
       throw new MessengerError('slack', err, 'Failed to send Slack message');
     }
