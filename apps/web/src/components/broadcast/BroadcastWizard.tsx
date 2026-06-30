@@ -31,6 +31,7 @@ import {
   useSendBroadcast,
 } from '@/hooks/useBroadcasts';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
+import { useTags } from '@/hooks/useTags';
 import type { MessengerType } from '@/types/chat';
 import type { BroadcastAttachment } from '@/types/broadcast';
 import { api } from '@/lib/api';
@@ -89,6 +90,7 @@ export function BroadcastWizard() {
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(
     null,
   );
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [broadcastAttachments, setBroadcastAttachments] = useState<BroadcastAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [messengerPriority, setMessengerPriority] = useState<MessengerType[]>([
@@ -103,6 +105,8 @@ export function BroadcastWizard() {
   // as a broadcast recipient — matches the limit used by the Chats page.
   const { data: chatsData } = useChats({ limit: 1000 });
   const { data: templatesData } = useTemplates();
+  const { data: tagsData } = useTags();
+  const tags = tagsData?.tags ?? [];
   const templateUseMutation = useTemplateUse();
   const createMutation = useCreateBroadcast();
   const updateMutation = useUpdateBroadcast();
@@ -153,6 +157,8 @@ export function BroadcastWizard() {
   const filteredChats = useMemo(() => {
     return allChats.filter((chat) => {
       if (messengerFilter && chat.messenger !== messengerFilter) return false;
+      if (tagFilter && !(chat.tags ?? []).some((t) => t.id === tagFilter))
+        return false;
       if (
         chatSearch &&
         !chat.name.toLowerCase().includes(chatSearch.toLowerCase())
@@ -160,7 +166,15 @@ export function BroadcastWizard() {
         return false;
       return true;
     });
-  }, [allChats, messengerFilter, chatSearch]);
+  }, [allChats, messengerFilter, tagFilter, chatSearch]);
+
+  // Select every chat that matches the current filters (search + messenger +
+  // tag) — handy for "send to all chats with this tag".
+  const selectAllFiltered = () => {
+    const ids = filteredChats.map((c) => c.id);
+    const merged = Array.from(new Set([...selectedChatIds, ...ids]));
+    setValue('chatIds', merged, { shouldValidate: true });
+  };
 
   const selectedChats = useMemo(() => {
     return allChats.filter((c) => selectedChatIds.includes(c.id));
@@ -562,6 +576,32 @@ export function BroadcastWizard() {
                   },
                 )}
               </div>
+            </div>
+
+            {/* Tag filter + bulk select */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={tagFilter ?? ''}
+                onChange={(e) => setTagFilter(e.target.value || null)}
+                className="rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-accent focus:outline-none"
+              >
+                <option value="">All tags</option>
+                {tags.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {filteredChats.length > 0 && (
+                <button
+                  type="button"
+                  onClick={selectAllFiltered}
+                  className="rounded-lg border-[1.5px] border-accent/30 bg-accent/5 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+                >
+                  Select all {filteredChats.length}
+                  {(tagFilter || messengerFilter || chatSearch) ? ' filtered' : ''}
+                </button>
+              )}
             </div>
 
             {/* Selected chips */}

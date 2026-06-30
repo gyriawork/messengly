@@ -182,6 +182,15 @@ function describeMedia(msg: Api.Message): TelegramMediaDescriptor | null {
 
 // ─── Manager ───
 
+// The persistent inbound listener is disabled by default. This is a
+// broadcast-only product (no inbox), so we don't need to receive messages — and
+// keeping a 24/7 client connected with the same session string conflicts with
+// the on-demand send/import clients (two connections sharing one auth key),
+// which makes Telegram invalidate the session within minutes. Using the session
+// only on-demand (sequentially) keeps it alive for a long time. Set
+// TELEGRAM_LISTENER_ENABLED=true to re-enable the persistent listener.
+const LISTENER_ENABLED = process.env.TELEGRAM_LISTENER_ENABLED === 'true';
+
 export class TelegramConnectionManager {
   private clients = new Map<string, ActiveClient>();
   private senderNameCache = new Map<string, { name: string; expiry: number }>();
@@ -190,6 +199,11 @@ export class TelegramConnectionManager {
    * On API startup, connect all Telegram integrations that are marked as connected.
    */
   async startAll(): Promise<void> {
+    if (!LISTENER_ENABLED) {
+      console.log('[TelegramManager] Persistent listener disabled (broadcast-only mode) — sessions are used on-demand only');
+      return;
+    }
+
     const integrations = await prisma.integration.findMany({
       where: { messenger: 'telegram', status: 'connected' },
       select: { id: true },
@@ -210,6 +224,10 @@ export class TelegramConnectionManager {
    * Start listening for messages on a specific integration.
    */
   async startListening(integrationId: string): Promise<void> {
+    // Disabled in broadcast-only mode — see LISTENER_ENABLED above. The session
+    // stays valid because nothing holds a persistent connection to it.
+    if (!LISTENER_ENABLED) return;
+
     // If a client is already registered for this integration (e.g. credentials
     // were just rotated by a connect/reconnect flow), stop it first so the new
     // session can take over. Otherwise messages from the old session keep
