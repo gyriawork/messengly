@@ -1,4 +1,4 @@
-import { Worker, Queue, type Job } from 'bullmq';
+import { Worker, Queue, type Job, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
@@ -24,6 +24,12 @@ const DEFAULT_ANTIBAN: Record<Messenger, {
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
+
+// BullMQ may resolve its own (nested) copy of ioredis whose Redis type differs
+// from ours on a non-deduped install (e.g. Railway's `npm i`). Cast for the
+// BullMQ constructors while keeping `connection` as a real Redis for direct
+// commands like scan/del.
+const bullConnection = connection as unknown as ConnectionOptions;
 
 // Separate connection for pub/sub notifications
 const pubClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
@@ -1307,7 +1313,7 @@ async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
       select: { id: true },
     });
     if (pendingChats.length > 0) {
-      const syncQueue = new Queue('message-sync', { connection });
+      const syncQueue = new Queue('message-sync', { connection: bullConnection });
       const chatIds = pendingChats.map((c) => c.id);
       // Batch into groups of 10 to avoid overwhelming the adapter
       for (let i = 0; i < chatIds.length; i += 10) {
@@ -1433,7 +1439,7 @@ const worker = new Worker<BroadcastSendPayload>(
     }
   },
   {
-    connection,
+    connection: bullConnection,
     concurrency: 3,
     limiter: {
       max: 5,
@@ -1463,7 +1469,7 @@ const messageSyncWorker = new Worker<any>(
     }
   },
   {
-    connection,
+    connection: bullConnection,
     concurrency: 2,
   },
 );
@@ -1527,7 +1533,7 @@ log.info('Broadcast worker ready, listening for jobs');
 
 async function recoverOverdueScheduledBroadcasts(): Promise<void> {
   try {
-    const broadcastQueue = new Queue('broadcast', { connection });
+    const broadcastQueue = new Queue('broadcast', { connection: bullConnection });
 
     const overdue = await prisma.broadcast.findMany({
       where: {
@@ -1562,7 +1568,7 @@ async function recoverOverdueScheduledBroadcasts(): Promise<void> {
 
 async function recoverPendingChatSyncs(): Promise<void> {
   try {
-    const messageSyncQueue = new Queue('message-sync', { connection });
+    const messageSyncQueue = new Queue('message-sync', { connection: bullConnection });
 
     // Find all chats that need syncing (grouped by org + messenger)
     const pendingChats = await prisma.chat.findMany({
@@ -1631,7 +1637,7 @@ async function recoverPendingChatSyncs(): Promise<void> {
 
 async function scheduleGmailWatchRenewal(): Promise<void> {
   try {
-    const renewalQueue = new Queue('message-sync', { connection });
+    const renewalQueue = new Queue('message-sync', { connection: bullConnection });
     await renewalQueue.add(
       'gmail:renew-watch',
       {},
