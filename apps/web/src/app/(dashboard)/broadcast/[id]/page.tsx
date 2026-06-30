@@ -1,13 +1,12 @@
 'use client';
 
-import { use } from 'react';
+import { useParams } from 'next/navigation';
 import { BroadcastDetail } from '@/components/broadcast/BroadcastDetail';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
-interface Props { params: Promise<{ id: string }> }
-
-export default function BroadcastDetailPage({ params }: Props) {
-  const { id } = use(params);
+export default function BroadcastDetailPage() {
+  const params = useParams();
+  const id = params.id as string;
   return (
     <RequireOrgContext>
       <BroadcastDetail id={id} />

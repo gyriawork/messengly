@@ -21,7 +21,7 @@ import {
   useDuplicateBroadcast,
   useDeleteBroadcast,
 } from '@/hooks/useBroadcasts';
-import type { Broadcast, BroadcastStatus } from '@/types/broadcast';
+import type { Broadcast, BroadcastChat, BroadcastStatus } from '@/types/broadcast';
 
 const messengerMeta: Record<
   string,
@@ -129,10 +129,11 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   const failed = stats?.failed || broadcast.failedCount || 0;
   const progress = total > 0 ? Math.round((sent / total) * 100) : 0;
 
-  // Group chats by messenger for per-messenger breakdown
-  const messengerBreakdown = getMessengerBreakdown(broadcast);
-  const failedChats =
-    broadcast.chats?.filter((c) => c.status === 'failed') || [];
+  // The detail API returns recipients grouped under `chatsByStatus`; normalize
+  // to a flat list so the breakdown and failed-recipients table work.
+  const allChats = normalizeChats(broadcast);
+  const messengerBreakdown = getMessengerBreakdown(allChats);
+  const failedChats = allChats.filter((c) => c.status === 'failed');
 
   // Build status timeline
   const timeline = buildTimeline(broadcast);
@@ -429,12 +430,46 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   );
 }
 
-function getMessengerBreakdown(broadcast: Broadcast) {
-  if (!broadcast.chats || broadcast.chats.length === 0) return [];
+// The broadcast detail endpoint returns recipients grouped by status under
+// `chatsByStatus`; older shapes used a flat `chats` array. Normalize both to a
+// flat BroadcastChat[] so the UI can render failures and per-messenger stats.
+function normalizeChats(broadcast: Broadcast): BroadcastChat[] {
+  if (broadcast.chats && broadcast.chats.length > 0) return broadcast.chats;
+  const cbs = (
+    broadcast as unknown as {
+      chatsByStatus?: Record<
+        string,
+        Array<{
+          chatId: string;
+          status: string;
+          errorReason?: string | null;
+          chat?: { name?: string; messenger?: string };
+        }>
+      >;
+    }
+  ).chatsByStatus;
+  if (!cbs) return [];
+  const out: BroadcastChat[] = [];
+  for (const list of Object.values(cbs)) {
+    for (const item of list ?? []) {
+      out.push({
+        chatId: item.chatId,
+        chatName: item.chat?.name ?? 'Unknown chat',
+        messenger: item.chat?.messenger ?? 'telegram',
+        status: item.status as BroadcastChat['status'],
+        error: item.errorReason ?? undefined,
+      });
+    }
+  }
+  return out;
+}
+
+function getMessengerBreakdown(chats: BroadcastChat[]) {
+  if (!chats || chats.length === 0) return [];
 
   const map: Record<string, { total: number; sent: number; failed: number }> =
     {};
-  for (const chat of broadcast.chats) {
+  for (const chat of chats) {
     if (!map[chat.messenger]) {
       map[chat.messenger] = { total: 0, sent: 0, failed: 0 };
     }
