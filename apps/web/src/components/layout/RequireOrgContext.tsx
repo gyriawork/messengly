@@ -19,7 +19,7 @@ export function RequireOrgContext({ children }: { children: React.ReactNode }) {
             Select an organization
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Choose an organization from the sidebar to view its data
+            Pick an organization in the sidebar to get started
           </p>
         </div>
       </div>

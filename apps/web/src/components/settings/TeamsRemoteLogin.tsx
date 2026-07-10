@@ -28,7 +28,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col items-center gap-3 py-8">
         <CheckCircle2 className="h-10 w-10 text-emerald-500" />
         <p className="text-sm font-medium text-slate-700">MS Teams connected</p>
-        <p className="text-xs text-slate-500">You can now import Teams chats and include them in broadcasts.</p>
+        <p className="text-xs text-slate-500">You can now bring in your Teams chats and start broadcasting.</p>
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
       {status === 'starting' && (
         <div className="flex flex-col items-center gap-3 py-8">
           <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-          <p className="text-sm text-slate-600">Starting the browser…</p>
+          <p className="text-sm text-slate-600">Opening a browser for you…</p>
         </div>
       )}
 
@@ -96,7 +96,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="text-center text-xs text-slate-500">
-            Click the picture to focus it, then type. The session saves itself once your chats load.
+            Click the picture and type as usual — we\u2019ll save everything once your chats appear.
           </p>
 
           <div className="mx-auto flex max-w-md gap-2">

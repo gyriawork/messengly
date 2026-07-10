@@ -369,7 +369,7 @@ function EmptyState({ status }: { status: BroadcastStatus | null }) {
   const messages: Record<string, { icon: React.ReactNode; text: string }> = {
     default: {
       icon: <Radio className="h-10 w-10 text-slate-300" />,
-      text: 'No broadcasts yet. Create your first broadcast to start reaching multiple chats at once.',
+      text: 'Nothing here yet. Your first broadcast is one click away.',
     },
     draft: {
       icon: <Inbox className="h-10 w-10 text-slate-300" />,
@@ -381,11 +381,11 @@ function EmptyState({ status }: { status: BroadcastStatus | null }) {
     },
     sent: {
       icon: <Radio className="h-10 w-10 text-slate-300" />,
-      text: 'No sent broadcasts yet.',
+      text: 'Broadcasts you\u2019ve sent will show up here.',
     },
     failed: {
       icon: <RotateCcw className="h-10 w-10 text-slate-300" />,
-      text: 'No failed broadcasts. Great job!',
+      text: 'Nothing has failed. Nice.',
     },
   };
 

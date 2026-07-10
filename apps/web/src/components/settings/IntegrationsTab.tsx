@@ -1267,16 +1267,14 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
             Connected Accounts
           </h2>
           <p className="text-sm text-slate-500">
-            Manage your messenger integrations. Connect accounts to start
-            sending and receiving messages.
+            Connect your messengers here — everything else builds on them.
           </p>
         </div>
 
         {visibleMessengers.length === 0 && (
           <div className="rounded-lg bg-amber-50 p-4 text-center">
             <p className="text-sm text-amber-700">
-              No messenger integrations are available yet. Please contact your
-              administrator to configure platform credentials.
+              There\u2019s nothing to connect yet. Ask your administrator to set up the platform keys first.
             </p>
           </div>
         )}

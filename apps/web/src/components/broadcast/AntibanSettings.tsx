@@ -243,7 +243,7 @@ export function AntibanSettings() {
       <div className="mt-5 flex items-start gap-2 rounded-lg bg-accent-bg px-3 py-2.5">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
         <p className="text-xs text-slate-600">
-          These settings are applied to every broadcast for this messenger. Save to activate.
+          These apply to every broadcast on this messenger. Hit Save to make them live.
         </p>
       </div>
 
@@ -472,10 +472,10 @@ function getRiskDescription(
   zone: 'safe' | 'moderate' | 'risky' | 'dangerous',
 ): string {
   const descriptions = {
-    safe: 'Low risk of account restrictions. Conservative sending pace.',
-    moderate: 'Moderate risk. Consider reducing batch sizes or increasing delays.',
-    risky: 'High risk of triggering anti-spam. Reduce sending speed.',
-    dangerous: 'Very high ban risk. Strongly reduce volume and increase delays.',
+    safe: 'You\u2019re sending at a relaxed pace — accounts stay comfortably under the radar.',
+    moderate: 'A bit brisk. Smaller batches or longer pauses would make this safer.',
+    risky: 'This pace can look like spam to the messengers. Worth slowing down.',
+    dangerous: 'At this speed a ban is a real possibility. Ease off the volume and add delays.',
   };
   return descriptions[zone];
 }

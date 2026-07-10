@@ -108,16 +108,16 @@ function calculateRiskScore(
 
   if (score <= 25) {
     zone = 'safe';
-    description = 'Settings are conservative. Low risk of triggering anti-spam measures.';
+    description = 'You\u2019re sending at a relaxed pace — accounts stay comfortably under the radar.';
   } else if (score <= 50) {
     zone = 'moderate';
-    description = 'Settings are slightly aggressive. Monitor delivery rates.';
+    description = 'A bit brisk. Keep an eye on delivery — smaller batches would make this safer.';
   } else if (score <= 75) {
     zone = 'risky';
-    description = 'Settings are aggressive. High chance of triggering rate limits or bans.';
+    description = 'This pace can look like spam to the messengers. Worth slowing down.';
   } else {
     zone = 'dangerous';
-    description = 'Settings are extremely aggressive. Very high risk of account suspension.';
+    description = 'At this speed a ban is a real possibility. Ease off the volume and add delays.';
   }
 
   return { score, zone, description };

@@ -147,7 +147,7 @@ export default function TemplatesPage() {
         <EmptyStateUI
           icon={<FileText className="h-12 w-12" />}
           title="No templates yet"
-          description="Create reusable message templates to speed up broadcasts and maintain a consistent style."
+          description="Write a message once, reuse it in every broadcast."
           action={
             <button
               onClick={() => setIsCreating(true)}

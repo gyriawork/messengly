@@ -311,7 +311,7 @@ export default function TagsPage() {
           <TagIcon className="mx-auto mb-3 h-10 w-10 text-slate-300" />
           <p className="text-sm font-medium text-slate-600">No tags yet</p>
           <p className="mt-1 text-xs text-slate-400">
-            Create tags to organize and categorize your chats
+            Tags help you group chats so the right people are one click away
           </p>
           <button
             onClick={() => setShowCreate(true)}

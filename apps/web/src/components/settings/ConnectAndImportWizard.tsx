@@ -114,7 +114,7 @@ function ChatSelector({
         {sorted.length === 0 && (
           <p className="p-4 text-center text-sm text-slate-400">
             {chats.length === 0
-              ? 'No new chats to import — everything is already in Messengly'
+              ? 'You\u2019re all caught up — every chat is already in Messengly'
               : 'No chats found'}
           </p>
         )}
@@ -334,12 +334,12 @@ export function ConnectAndImportWizard({
                 {step === 'error' && `Something went wrong`}
               </h3>
               <p className="text-xs text-slate-500">
-                {step === 'credentials' && 'Enter your credentials to get started'}
-                {step === 'loading-chats' && `Fetching available ${messengerName} chats`}
-                {step === 'selecting' && 'Choose which chats to import with message history'}
-                {step === 'importing' && 'Loading messages from selected chats'}
-                {step === 'done' && 'Your chats are ready'}
-                {step === 'error' && 'Please try again'}
+                {step === 'credentials' && 'Sign in to connect your account'}
+                {step === 'loading-chats' && `Looking for your ${messengerName} chats…`}
+                {step === 'selecting' && 'Pick the chats you want in Messengly'}
+                {step === 'importing' && 'Bringing in your chats and their history'}
+                {step === 'done' && 'All set'}
+                {step === 'error' && 'That didn\u2019t work — give it another try'}
               </p>
             </div>
           </div>
@@ -453,7 +453,7 @@ export function ConnectAndImportWizard({
                 </p>
               )}
               <p className="mt-1 text-xs text-slate-500">
-                Messages have been loaded and chats are ready to use.
+                Your chats are in, history and all.
               </p>
             </div>
             <div className="flex gap-2">

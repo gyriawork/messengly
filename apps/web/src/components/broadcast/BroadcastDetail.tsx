@@ -560,7 +560,7 @@ function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolea
         >
           {entries.length === 0 ? (
             <p className="py-4 text-center text-xs text-slate-400">
-              Nothing has happened yet — recipients are waiting in the queue.
+              Nothing yet — your recipients are in the queue, lines will appear as sending starts.
             </p>
           ) : (
             <div className="space-y-1 font-mono text-xs leading-relaxed">
