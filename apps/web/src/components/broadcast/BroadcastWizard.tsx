@@ -61,7 +61,7 @@ const messengerMeta: Record<
     textClass: 'text-messenger-gm-text',
   },
   teams: {
-    label: 'Microsoft Teams',
+    label: 'MS Teams',
     bgClass: 'bg-messenger-mt-bg',
     textClass: 'text-messenger-mt-text',
   },

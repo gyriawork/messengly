@@ -30,7 +30,7 @@ const MESSENGER_LABELS: Record<AnalyticsMessenger, string> = {
   slack: 'Slack',
   whatsapp: 'WhatsApp',
   gmail: 'Gmail',
-  teams: 'Microsoft Teams',
+  teams: 'MS Teams',
 };
 
 export function TrendChart({

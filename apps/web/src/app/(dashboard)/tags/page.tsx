@@ -231,9 +231,8 @@ function TagCard({
           style={{ backgroundColor: tag.color }}
         />
         <span
-          className="truncate text-sm font-semibold"
+          className="text-sm font-semibold"
           style={{ color: tag.color }}
-          title={tag.name}
         >
           {tag.name}
         </span>
@@ -323,7 +322,7 @@ export default function TagsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {tags.map((tag) => (
             <TagCard
               key={tag.id}

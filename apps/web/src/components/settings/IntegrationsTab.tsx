@@ -85,7 +85,7 @@ const messengers: MessengerInfo[] = [
   },
   {
     key: 'teams',
-    name: 'Microsoft Teams',
+    name: 'MS Teams',
     abbr: 'MT',
     description: 'Broadcast to Teams chats through a signed-in browser session',
     bgClass: 'bg-messenger-mt-bg',

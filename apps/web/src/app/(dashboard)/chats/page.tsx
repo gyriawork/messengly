@@ -45,7 +45,7 @@ const messengerConfig: Record<
   slack: { label: 'Slack', abbr: 'SL', bgClass: 'bg-messenger-sl-bg', textClass: 'text-messenger-sl-text', dotColor: 'bg-[#611f69]' },
   whatsapp: { label: 'WhatsApp', abbr: 'WA', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text', dotColor: 'bg-[#25D366]' },
   gmail: { label: 'Gmail', abbr: 'GM', bgClass: 'bg-messenger-gm-bg', textClass: 'text-messenger-gm-text', dotColor: 'bg-[#EA4335]' },
-  teams: { label: 'Microsoft Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text', dotColor: 'bg-[#4B53BC]' },
+  teams: { label: 'MS Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text', dotColor: 'bg-[#4B53BC]' },
 };
 
 const statusChip: Record<string, { label: string; className: string }> = {
@@ -587,7 +587,7 @@ export default function ChatsPage() {
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate'>('lastActivityAt');
+  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate' | 'ownerName' | 'status'>('lastActivityAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
 
@@ -644,6 +644,18 @@ export default function ChatsPage() {
         else if (!aTag) cmp = 1;
         else if (!bTag) cmp = -1;
         else cmp = aTag.localeCompare(bTag);
+      } else if (sortBy === 'ownerName') {
+        const aOwner = isChatGroup(a) ? '' : (a.ownerName ?? '');
+        const bOwner = isChatGroup(b) ? '' : (b.ownerName ?? '');
+        // Chats without an owner sink to the bottom in both directions.
+        if (!aOwner && !bOwner) cmp = 0;
+        else if (!aOwner) cmp = 1;
+        else if (!bOwner) cmp = -1;
+        else cmp = aOwner.localeCompare(bOwner);
+      } else if (sortBy === 'status') {
+        const aStatus = isChatGroup(a) ? '' : (a.status ?? '');
+        const bStatus = isChatGroup(b) ? '' : (b.status ?? '');
+        cmp = aStatus.localeCompare(bStatus);
       } else if (sortBy === 'lastMessageDate') {
         cmp = getLastMessageTime(a) - getLastMessageTime(b);
       } else {
@@ -832,6 +844,8 @@ export default function ChatsPage() {
           <option value="name">Sort: Name</option>
           <option value="chatType">Sort: Type</option>
           <option value="tags">Sort: Tags</option>
+          <option value="ownerName">Sort: Owner</option>
+          <option value="status">Sort: Status</option>
         </select>
 
         {/* Sort direction toggle */}

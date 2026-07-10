@@ -27,7 +27,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
     return (
       <div className="flex flex-col items-center gap-3 py-8">
         <CheckCircle2 className="h-10 w-10 text-emerald-500" />
-        <p className="text-sm font-medium text-slate-700">Microsoft Teams connected</p>
+        <p className="text-sm font-medium text-slate-700">MS Teams connected</p>
         <p className="text-xs text-slate-500">You can now import Teams chats and include them in broadcasts.</p>
       </div>
     );

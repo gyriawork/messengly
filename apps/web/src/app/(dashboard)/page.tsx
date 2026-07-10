@@ -44,7 +44,7 @@ const MESSENGER_CONFIG = {
   telegram: { label: 'Telegram', short: 'TG', color: 'bg-[#2AABEE]' },
   slack: { label: 'Slack', short: 'SL', color: 'bg-[#E01E5A]' },
   whatsapp: { label: 'WhatsApp', short: 'WA', color: 'bg-[#25D366]' },
-  teams: { label: 'Microsoft Teams', short: 'TS', color: 'bg-[#6264A7]' },
+  teams: { label: 'MS Teams', short: 'TS', color: 'bg-[#6264A7]' },
 } as const;
 
 export default function DashboardPage() {

@@ -17,7 +17,7 @@ const MESSENGER_LABELS: Record<MessengerType, string> = {
   slack: 'Slack',
   whatsapp: 'WhatsApp',
   gmail: 'Gmail',
-  teams: 'Microsoft Teams',
+  teams: 'MS Teams',
 };
 
 export function ImportChatsModal({ onClose }: ImportChatsModalProps) {

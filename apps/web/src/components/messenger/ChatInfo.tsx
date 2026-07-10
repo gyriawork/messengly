@@ -49,7 +49,7 @@ function getMessengerLabel(messenger: MessengerType): string {
     slack: 'Slack',
     whatsapp: 'WhatsApp',
     gmail: 'Gmail',
-    teams: 'Microsoft Teams',
+    teams: 'MS Teams',
   };
   return map[messenger];
 }
