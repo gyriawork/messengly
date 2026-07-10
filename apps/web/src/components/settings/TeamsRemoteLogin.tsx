@@ -69,11 +69,15 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
 
       {status === 'streaming' && (
         <div className="space-y-3">
-          {/* The image is focusable so it can receive keystrokes. */}
+          {/*
+            The wrapper is focusable so it can receive keystrokes, and holds a fixed
+            16:9 box so the dialog does not jump when the first frame arrives.
+            `max-h` keeps the frame inside the viewport on short screens.
+          */}
           <div
             tabIndex={0}
             onKeyDown={keyDown}
-            className="overflow-hidden rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-accent"
+            className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-900 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
           >
             {frameUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -81,14 +85,12 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
                 src={frameUrl}
                 alt="Teams login"
                 onClick={click}
-                width={viewport.width}
-                height={viewport.height}
-                className="w-full cursor-pointer select-none"
+                className="h-full w-full cursor-pointer select-none object-contain"
                 draggable={false}
               />
             ) : (
-              <div className="flex h-64 items-center justify-center bg-slate-50">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <div className="flex h-full items-center justify-center">
+                <Loader2 className="h-7 w-7 animate-spin text-slate-500" />
               </div>
             )}
           </div>
@@ -97,7 +99,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
             Click the picture to focus it, then type. The session saves itself once your chats load.
           </p>
 
-          <div className="flex gap-2">
+          <div className="mx-auto flex max-w-md gap-2">
             <button
               onClick={save}
               disabled={saving}

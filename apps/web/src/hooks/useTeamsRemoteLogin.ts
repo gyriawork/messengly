@@ -100,12 +100,32 @@ export function useTeamsRemoteLogin() {
     } catch { /* the browser may already be gone — nothing to do */ }
   }, []);
 
-  /** Map a click on the rendered image back to browser viewport coordinates. */
+  /**
+   * Map a click on the rendered image back to browser viewport coordinates.
+   *
+   * The image is drawn with `object-contain`, so when the element's box is not
+   * exactly 16:9 the picture is letterboxed inside it. Measuring against the
+   * element rect alone would then send the wrong coordinates — off by the size of
+   * the bars. Compute the drawn area and translate against that.
+   */
   const click = useCallback(
     async (event: React.MouseEvent<HTMLImageElement>) => {
       const rect = event.currentTarget.getBoundingClientRect();
-      const x = Math.round(((event.clientX - rect.left) / rect.width) * viewport.width);
-      const y = Math.round(((event.clientY - rect.top) / rect.height) * viewport.height);
+      const scale = Math.min(rect.width / viewport.width, rect.height / viewport.height);
+      if (!Number.isFinite(scale) || scale <= 0) return;
+
+      const drawnWidth = viewport.width * scale;
+      const drawnHeight = viewport.height * scale;
+      const offsetX = (rect.width - drawnWidth) / 2;
+      const offsetY = (rect.height - drawnHeight) / 2;
+
+      const x = Math.round((event.clientX - rect.left - offsetX) / scale);
+      const y = Math.round((event.clientY - rect.top - offsetY) / scale);
+
+      // A click on the letterbox bars is outside the browser — the agent would
+      // reject it with OUT_OF_BOUNDS, so don't bother it.
+      if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) return;
+
       try {
         await api.post('/api/integrations/teams/remote/click', { x, y });
       } catch (err) {

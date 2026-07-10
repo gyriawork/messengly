@@ -1297,6 +1297,8 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
           messenger={connectingMessenger.key}
           messengerName={connectingMessenger.name}
           isAlreadyConnected={integrationsByMessenger[connectingMessenger.key]?.status === 'connected'}
+          // Teams signs in through a live remote browser, which needs room to work in.
+          wideCredentialsStep={connectingMessenger.key === 'teams'}
           renderCredentialsForm={(onSuccess) => {
             const m = connectingMessenger;
             if (m.key === 'telegram') {
