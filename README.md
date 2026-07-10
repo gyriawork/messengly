@@ -1,4 +1,4 @@
-# Omnichannel Messenger V1.1
+# Messengly V1.1
 
 Unified inbox for **Telegram**, **Slack**, **WhatsApp**, and **Gmail**. Send messages as yourself (not a bot), manage chats across messengers, and broadcast to hundreds of contacts with smart anti-ban rate limiting.
 

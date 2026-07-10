@@ -45,3 +45,6 @@ coverage/
 .netlify
 apps/web/_deploy/
 apps/web/test-results/
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo

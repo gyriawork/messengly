@@ -10,7 +10,7 @@
 
 ## Project Overview
 
-You are building **Omnichannel Messenger V1.1** — a SaaS unified inbox for Telegram, Slack, WhatsApp, and Gmail. Messages are sent as the user (not a bot). The product supports multi-tenant organizations, chat management, mass broadcasts with anti-ban rate limiting, and real-time messaging.
+You are building **Messengly V1.1** — a SaaS unified inbox for Telegram, Slack, WhatsApp, and Gmail. Messages are sent as the user (not a bot). The product supports multi-tenant organizations, chat management, mass broadcasts with anti-ban rate limiting, and real-time messaging.
 
 ## Documentation (read in this order)
 

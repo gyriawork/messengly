@@ -17,8 +17,8 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
-import { MESSENGER_PLATFORM_FIELDS } from '@omnichannel/shared';
-import type { Messenger } from '@omnichannel/shared';
+import { MESSENGER_PLATFORM_FIELDS } from '@messengly/shared';
+import type { Messenger } from '@messengly/shared';
 import {
   useUpdatePlatformConfig,
   useDeletePlatformConfig,

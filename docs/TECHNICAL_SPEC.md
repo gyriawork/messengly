@@ -1,6 +1,6 @@
-# Omnichannel Messenger V1.1 — Technical Specification for Claude Code
+# Messengly V1.1 — Technical Specification for Claude Code
 
-> This document is the primary technical reference for implementing the Omnichannel Messenger.
+> This document is the primary technical reference for implementing the Messengly.
 > Read PRODUCT_SPEC.md first for full product context.
 
 ## Architecture Overview
@@ -493,7 +493,7 @@ ws:presence           { userId, status: online|offline }
 ## Project Structure
 
 ```
-omnichannel-messenger/
+messengly/
 ├── apps/
 │   ├── web/                          # Next.js frontend (Netlify)
 │   │   ├── src/

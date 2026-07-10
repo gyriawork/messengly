@@ -13,7 +13,7 @@ function getResend(): Resend | null {
   return resend;
 }
 
-const FROM = process.env.EMAIL_FROM || 'Omnichannel <noreply@yourdomain.com>';
+const FROM = process.env.EMAIL_FROM || 'Messengly <noreply@yourdomain.com>';
 
 // ─── Invite Email ───
 
@@ -31,15 +31,15 @@ export async function sendInviteEmail(params: {
   }
 
   const orgLine = params.organizationName
-    ? `You have been invited to join <strong>${params.organizationName}</strong> on Omnichannel Messenger.`
-    : 'You have been invited to join Omnichannel Messenger.';
+    ? `You have been invited to join <strong>${params.organizationName}</strong> on Messengly.`
+    : 'You have been invited to join Messengly.';
 
   const { error } = await client.emails.send({
     from: FROM,
     to: params.to,
     subject: params.organizationName
       ? `You're invited to ${params.organizationName}`
-      : "You're invited to Omnichannel Messenger",
+      : "You're invited to Messengly",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">Welcome, ${params.name}!</h2>
@@ -85,7 +85,7 @@ export async function sendPasswordResetEmail(params: {
   const { error } = await client.emails.send({
     from: FROM,
     to: params.to,
-    subject: 'Reset your password — Omnichannel Messenger',
+    subject: 'Reset your password — Messengly',
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">Password Reset</h2>

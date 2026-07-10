@@ -1,4 +1,4 @@
-# Omnichannel Messenger V1.1 — Design System
+# Messengly V1.1 — Design System
 
 ## Typography
 

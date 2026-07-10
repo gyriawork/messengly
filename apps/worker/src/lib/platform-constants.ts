@@ -1,4 +1,4 @@
-// Platform credential constants — duplicated from @omnichannel/shared
+// Platform credential constants — duplicated from @messengly/shared
 // to avoid workspace dependency issues with Railway builds.
 
 export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;

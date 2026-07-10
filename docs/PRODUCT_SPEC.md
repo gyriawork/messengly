@@ -1,4 +1,4 @@
-# Omnichannel Messenger V1.1 — Product Specification
+# Messengly V1.1 — Product Specification
 
 > Source: Notion V1.1 — https://www.notion.so/32ff92f5922e81e6ab5debf65993c43e
 

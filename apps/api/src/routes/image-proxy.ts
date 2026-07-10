@@ -162,7 +162,7 @@ async function safeFetch(
         redirect: 'manual',
         signal,
         headers: {
-          'User-Agent': 'Omnichannel-Messenger-ImageProxy/1.0',
+          'User-Agent': 'Messengly-ImageProxy/1.0',
           Accept: 'image/png,image/jpeg,image/gif,image/webp,image/avif',
         },
       });
