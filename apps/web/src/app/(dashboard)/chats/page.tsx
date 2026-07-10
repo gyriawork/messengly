@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -455,10 +455,12 @@ function GroupRow({
   group,
   selectedIds,
   onToggleGroup,
+  compact = false,
 }: {
   group: ChatGroup;
   selectedIds: string[];
   onToggleGroup: (chatIds: string[]) => void;
+  compact?: boolean;
 }) {
   const cfg = messengerConfig.gmail;
   const groupChatIds = group.chats.map((c) => c.id);
@@ -481,7 +483,7 @@ function GroupRow({
       {/* Chat: avatar + label (no preview — visually consistent with other rows) */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <ChatAvatar name={group.label} messenger="gmail" size={36} />
+          {!compact && <ChatAvatar name={group.label} messenger="gmail" size={36} />}
           <div className="min-w-0">
             <a
               href={`/messenger?search=${encodeURIComponent(group.domain)}`}
@@ -552,23 +554,31 @@ export default function ChatsPage() {
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
   const [showImport, setShowImport] = useState(false);
+
+  // Compact view: a third of the row height, no avatars. Persisted per browser.
+  const [compactView, setCompactView] = useState(false);
+  useEffect(() => {
+    setCompactView(localStorage.getItem('chats-compact-view') === '1');
+  }, []);
+  const toggleCompactView = () =>
+    setCompactView((v) => {
+      localStorage.setItem('chats-compact-view', v ? '0' : '1');
+      return !v;
+    });
   const refreshStatuses = useRefreshChatStatuses();
 
   const handleRefreshStatuses = () => {
     refreshStatuses.mutate(undefined, {
       onSuccess: (data) => {
-        const flipped = Object.values(data.results).reduce(
-          (n, r) => n + r.activated + r.deactivated, 0);
-        const failed = Object.entries(data.errors).map(([m, e]) => `${m}: ${e}`);
-        if (flipped === 0 && failed.length === 0) {
-          toast.success('All chats are up to date');
-        } else if (flipped > 0) {
-          toast.success(`Updated ${flipped} chat${flipped === 1 ? '' : 's'}`);
+        // Disconnected messengers are skipped server-side; anything in `errors`
+        // is a real failure of a connected messenger's check.
+        if (Object.keys(data.errors).length > 0) {
+          toast.error('Sync Failed');
+        } else {
+          toast.success('Success');
         }
-        for (const f of failed) toast.warning(`Could not check ${f}`);
       },
-      onError: (err) =>
-        toast.error(err instanceof Error ? err.message : 'Failed to update chats'),
+      onError: () => toast.error('Sync Failed'),
     });
   };
   const [search, setSearch] = useState('');
@@ -696,6 +706,31 @@ export default function ChatsPage() {
         </div>
         {/* Importing chats from a connected account is available to every user. */}
         <div className="flex gap-2 self-start">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={compactView}
+          onClick={toggleCompactView}
+          title="Compact view: denser rows, no avatars"
+          className="group inline-flex items-center gap-2.5 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px"
+        >
+          <span
+            className={cn(
+              'relative h-5 w-9 shrink-0 rounded-full transition-colors duration-300 ease-out',
+              compactView ? 'bg-accent' : 'bg-slate-300 group-hover:bg-slate-400',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-300 ease-out',
+                compactView && 'translate-x-4',
+              )}
+            />
+          </span>
+          <span className="w-[6.75rem] text-left">
+            {compactView ? 'Compact view' : 'Normal view'}
+          </span>
+        </button>
         <button
           onClick={handleRefreshStatuses}
           disabled={refreshStatuses.isPending}
@@ -977,7 +1012,12 @@ export default function ChatsPage() {
             }
           />
         ) : (
-          <table className="w-full">
+          <table
+            className={cn(
+              'w-full [&_tbody_td]:transition-[padding] [&_tbody_td]:duration-200',
+              compactView && '[&_tbody_td]:py-1',
+            )}
+          >
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50">
                 <th className="w-10 px-4 py-3">
@@ -1018,7 +1058,7 @@ export default function ChatsPage() {
             <tbody className="divide-y divide-slate-100">
               {sorted.map((row) => {
                 if (isChatGroup(row)) {
-                  return <GroupRow key={`group-${row.domain}`} group={row} selectedIds={selectedIds} onToggleGroup={toggleGroup} />;
+                  return <GroupRow key={`group-${row.domain}`} group={row} selectedIds={selectedIds} onToggleGroup={toggleGroup} compact={compactView} />;
                 }
                 const chat = row;
                 const mcfg = messengerConfig[chat.messenger];
@@ -1046,7 +1086,9 @@ export default function ChatsPage() {
                     {/* Chat name + avatar */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <ChatAvatar name={chat.name} messenger={chat.messenger} size={36} />
+                        {!compactView && (
+                          <ChatAvatar name={chat.name} messenger={chat.messenger} size={36} />
+                        )}
                         <div>
                           {/* Messenger view is disabled — chat name is not a link for now. */}
                           <span className="text-sm font-medium text-slate-800">

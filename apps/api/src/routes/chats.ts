@@ -748,10 +748,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           where: { messenger, organizationId, status: 'connected' },
           orderBy: { createdAt: 'asc' },
         });
-        if (!integration) {
-          errors[messenger] = 'Not connected — statuses left as they are';
-          continue;
-        }
+        // A disconnected messenger is simply not checkable — that is not an
+        // error, its chats just keep their current status.
+        if (!integration) continue;
 
         let reachable: Set<string>;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
