@@ -27,6 +27,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # Playwright agent that drives the Teams web UI. See services/teams-agent.
+  # Holds one browser session for the whole system; the volume is that session.
+  teams-agent:
+    build:
+      context: ./services/teams-agent
+      dockerfile: Dockerfile
+    ports:
+      - '3004:3004'
+    environment:
+      TEAMS_AGENT_API_KEY: change-me-teams-agent-key
+      DATA_DIR: /data
+      NODE_ENV: production
+      # Teams blocks datacenter IPs. Unset is fine from a home/office network.
+      # AGENT_PROXY_URL: http://user:pass@residential-proxy:port
+    volumes:
+      - teams-session:/data
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3004/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   api:
     build:
       context: .
@@ -40,6 +62,8 @@ services:
       JWT_REFRESH_SECRET: change-me-refresh-in-production-16
       CREDENTIALS_ENCRYPTION_KEY: change-me-encryption-key-32chars!
       APP_URL: http://localhost:3000
+      TEAMS_AGENT_URL: http://teams-agent:3004
+      TEAMS_AGENT_API_KEY: change-me-teams-agent-key
       NODE_ENV: production
     depends_on:
       postgres:
@@ -55,6 +79,8 @@ services:
       DATABASE_URL: postgresql://omnichannel:omnichannel@postgres:5432/omnichannel
       REDIS_URL: redis://redis:6379
       CREDENTIALS_ENCRYPTION_KEY: change-me-encryption-key-32chars!
+      TEAMS_AGENT_URL: http://teams-agent:3004
+      TEAMS_AGENT_API_KEY: change-me-teams-agent-key
       NODE_ENV: production
     depends_on:
       postgres:
@@ -75,3 +101,5 @@ services:
 
 volumes:
   pgdata:
+  # The Teams browser session. Losing it means a manual MFA login.
+  teams-session:

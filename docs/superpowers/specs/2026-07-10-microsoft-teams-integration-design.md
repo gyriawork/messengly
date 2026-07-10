@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-10
 **Status:** Approved
-**Scope:** new `apps/teams-agent` sidecar + `teams` adapter in `apps/api` and `apps/worker` + `teams` surfaces in `apps/web`
+**Scope:** new `services/teams-agent` sidecar + `teams` adapter in `apps/api` and `apps/worker` + `teams` surfaces in `apps/web`
 
 ## Problem
 
@@ -56,14 +56,21 @@ apps/api    → lib/teams-client.ts, integrations/teams.ts, remote-login proxy r
 apps/worker → lib/teams-client.ts, integrations/teams.ts (sendMessage)
                         │  HTTP: TEAMS_AGENT_URL + X-Api-Key
                         ▼
-apps/teams-agent  ← NEW Railway service: Playwright + Chromium
-                    volume /data, AGENT_PROXY_URL (residential proxy)
+services/teams-agent  ← NEW Railway service: Playwright + Chromium
+                        volume /data, AGENT_PROXY_URL (residential proxy)
 ```
 
 Teams plugs into the **existing** messenger abstraction. Everything already messenger-agnostic picks
 it up for free: the `broadcast` BullMQ queue, the per-messenger grouping in `sendMessengerBatch`
 (`apps/worker/src/index.ts`), the `ws:events` Redis bridge, `useSocket`, and the Prisma models
 (`messenger` is a plain `String` — **no migration required**).
+
+### Why `services/` and not `apps/`
+
+The root `package.json` declares workspaces as `["apps/*", "packages/*"]`, and Netlify builds the
+frontend with a bare `npm install` at the repository root — which installs every workspace's
+dependencies. An `apps/teams-agent` would therefore drag a 150 MB Chromium download into every web
+build. `services/` sits outside the glob, so the sidecar keeps its own lockfile and `node_modules`.
 
 ### Why a sidecar
 
@@ -108,7 +115,10 @@ covers login, including MFA and passwordless email codes, which form-filling han
 | `GET /chats` → `[{ threadId, name, type }]` | `scanChats.js` + `sidebar.js` |
 | `POST /messages` `{ threadId, html, plain, attachments[] }` | `sendMessage.js` verbatim |
 
-### Two deliberate deviations from the original
+### Deviations from the original
+
+The first two were planned. The last two are bugs found while porting; both exist in meetsbroadcast
+today.
 
 **1. Return `threadId`, not the chat name.** `sidebar.js` already parses a stable conversation id out
 of `data-fui-tree-item-value`, then throws it away — meetsbroadcast keys chats on `chat_name`, so a
@@ -116,8 +126,22 @@ renamed chat silently becomes a different chat. Messengly requires `externalChat
 returns the `threadId` and sends by `threadId` via `clickChatById`.
 
 **2. Raise the `lock.js` mutex timeout.** 60 s is too short against the broadcast worker's
-`concurrency: 3`; two concurrent broadcasts containing Teams chats would fail to acquire. Raise it
-and make the queue explicit.
+`concurrency: 3`; two concurrent broadcasts containing Teams chats would fail to acquire. Raised to
+10 minutes, with an explicit queue.
+
+**3. `saveSession()` demands positive proof of a login.** The original refused to save only when
+Teams displayed its "sign in again" banner. But the signed-out marketing page at `teams.live.com/v2/`
+shows no banner and no chats, so an unauthenticated session was persisted and reported as connected —
+observed directly: `chatListItems: 0`, `composer: false`, session written to disk. In meetsbroadcast a
+human clicks Save only after seeing their chat list, which hides the flaw. In Messengly it would mean
+an Integration marked `connected` whose every broadcast fails. The agent now requires that the chat
+list actually rendered, and `/session/status` reports `expired` when the sidebar never appears.
+
+**4. `cleanup()` removes only its own `disconnected` listener.** `removeAllListeners('disconnected')`
+also strips the internal once-listener that Playwright's `Browser` constructor registers to resolve
+the promise `browser.close()` awaits. Chromium dies, `close()` never resolves, and the HTTP request
+hangs forever. Measured: `close()` takes 47 ms standalone, and timed out past 90 s through the
+service.
 
 ### Load-bearing logic that must be ported verbatim
 
