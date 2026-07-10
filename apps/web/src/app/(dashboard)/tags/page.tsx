@@ -224,7 +224,7 @@ function TagCard({
   onDelete: () => void;
 }) {
   return (
-    <div className="group flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-xs transition-shadow hover:shadow-sm">
+    <div className="group flex items-center justify-between rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
       <div className="flex min-w-0 items-center gap-3">
         <span
           className="h-3 w-3 shrink-0 rounded-full"
@@ -287,14 +287,14 @@ export default function TagsPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Tags</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-slate-900">Tags</h1>
+          <p className="mt-1 text-sm text-slate-500">
             {tags.length} tag{tags.length !== 1 ? 's' : ''} created
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
         >
           <Plus className="h-4 w-4" />
           New Tag
