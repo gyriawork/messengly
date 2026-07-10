@@ -1,0 +1,9 @@
+node_modules/
+data/
+*.log
+
+# Teams browser session — contains live Microsoft account cookies and tokens.
+# Never commit these.
+session.json
+session.json.prev
+session*.json

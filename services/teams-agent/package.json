@@ -1,0 +1,25 @@
+{
+  "name": "teams-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright agent that drives the Teams web UI for Messengly. Ported from meetsbroadcast.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "LOG_PRETTY=true node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "helmet": "^7.1.0",
+    "node-emoji": "^2.2.0",
+    "pino": "^9.4.0",
+    "playwright": "1.59.1"
+  },
+  "devDependencies": {
+    "pino-pretty": "^11.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
