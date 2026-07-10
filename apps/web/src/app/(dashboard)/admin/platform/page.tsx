@@ -47,7 +47,7 @@ export default function PlatformSettingsPage() {
           <Loader2 className="h-6 w-6 animate-spin text-accent" />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-3">
           {(entries ?? []).map((entry) => (
             <PlatformConfigCard key={entry.messenger} entry={entry} />
           ))}
