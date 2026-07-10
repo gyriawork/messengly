@@ -21,7 +21,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Google Sans', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Figtree', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
       borderRadius: {
         DEFAULT: '8px',
