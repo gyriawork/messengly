@@ -722,6 +722,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   // the same signal the import wizard trusts. The manual `read-only` status is a
   // user decision and is never touched.
   //
+  // Deactivation requires TWO consecutive misses: the Teams adapter scans a
+  // virtualized sidebar with a browser, and a single cold/partial scan can
+  // under-collect the list — one flaky scan must not flip statuses. Each scan
+  // that misses a chat bumps its `missedScans` counter; a scan that finds it
+  // resets the counter. Only chats at `missedScans >= 2` are deactivated.
+  //
   // Runs synchronously: the slowest messenger is Teams (a browser scan,
   // ~10-60 s), which is acceptable for a button with a spinner.
 
@@ -774,24 +780,44 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           select: { id: true, externalChatId: true, status: true },
         });
 
+        const presentIds = chats
+          .filter((c) => reachable.has(c.externalChatId))
+          .map((c) => c.id);
         const activateIds = chats
           .filter((c) => c.status === 'inactive' && reachable.has(c.externalChatId))
           .map((c) => c.id);
-        const deactivateIds = chats
-          .filter((c) => c.status === 'active' && !reachable.has(c.externalChatId))
+        const missedIds = chats
+          .filter((c) => !reachable.has(c.externalChatId))
           .map((c) => c.id);
 
+        if (presentIds.length > 0) {
+          // A confirmed sighting wipes the miss history, so counters only ever
+          // reflect *consecutive* misses.
+          await prisma.chat.updateMany({ where: { id: { in: presentIds } }, data: { missedScans: 0 } });
+        }
         if (activateIds.length > 0) {
           await prisma.chat.updateMany({ where: { id: { in: activateIds } }, data: { status: 'active' } });
         }
-        if (deactivateIds.length > 0) {
-          await prisma.chat.updateMany({ where: { id: { in: deactivateIds } }, data: { status: 'inactive' } });
+
+        let deactivated = 0;
+        if (missedIds.length > 0) {
+          // Increment BEFORE deactivating: a chat missed for the first time
+          // must end this run at missedScans=1 and still active.
+          await prisma.chat.updateMany({
+            where: { id: { in: missedIds } },
+            data: { missedScans: { increment: 1 } },
+          });
+          const result = await prisma.chat.updateMany({
+            where: { id: { in: missedIds }, status: 'active', missedScans: { gte: 2 } },
+            data: { status: 'inactive' },
+          });
+          deactivated = result.count;
         }
 
         results[messenger] = {
           checked: chats.length,
           activated: activateIds.length,
-          deactivated: deactivateIds.length,
+          deactivated,
         };
       }
 

@@ -110,6 +110,7 @@ model Chat {
   syncStatus       String   @default("pending") // pending | syncing | synced | failed
   syncCursor       String?  // adapter-specific pagination cursor for resumable sync
   hasFullHistory   Boolean  @default(false) // true once full message history has been pulled
+  missedScans      Int      @default(0) // consecutive reachability checks that missed this chat
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
