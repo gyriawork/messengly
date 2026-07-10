@@ -18,6 +18,20 @@ import { api } from '@/lib/api';
 
 const POLL_INTERVAL_MS = 700;
 
+/**
+ * Typed characters are batched instead of sent one request per keystroke. A
+ * password typed at speed would otherwise fire dozens of requests and, together
+ * with the screenshot poll, walk straight into the API's rate limiter.
+ */
+const TYPE_FLUSH_MS = 150;
+const TYPE_FLUSH_MAX_CHARS = 100;
+
+/** The agent only accepts these non-printable keys. */
+const ALLOWED_KEYS = new Set([
+  'Enter', 'Tab', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+]);
+
 export type TeamsLoginStatus = 'idle' | 'starting' | 'streaming' | 'connected' | 'error';
 
 interface RemoteStartResponse {
@@ -37,6 +51,9 @@ export function useTeamsRemoteLogin() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const objectUrl = useRef<string | null>(null);
   const stopped = useRef(false);
+
+  const typeBuffer = useRef('');
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Object URLs leak until revoked, and we mint one per frame. */
   const showFrame = useCallback((blob: Blob) => {
@@ -89,6 +106,8 @@ export function useTeamsRemoteLogin() {
   const stop = useCallback(async () => {
     stopped.current = true;
     if (pollTimer.current) clearTimeout(pollTimer.current);
+    if (flushTimer.current) clearTimeout(flushTimer.current);
+    typeBuffer.current = '';
     if (objectUrl.current) {
       URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = null;
@@ -98,6 +117,23 @@ export function useTeamsRemoteLogin() {
     try {
       await api.post('/api/integrations/teams/remote/stop');
     } catch { /* the browser may already be gone — nothing to do */ }
+  }, []);
+
+  /** Send whatever characters have piled up since the last flush. */
+  const flushTyping = useCallback(async () => {
+    if (flushTimer.current) {
+      clearTimeout(flushTimer.current);
+      flushTimer.current = null;
+    }
+    const text = typeBuffer.current;
+    typeBuffer.current = '';
+    if (!text) return;
+
+    try {
+      await api.post('/api/integrations/teams/remote/type', { text });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Typing failed');
+    }
   }, []);
 
   /**
@@ -110,6 +146,10 @@ export function useTeamsRemoteLogin() {
    */
   const click = useCallback(
     async (event: React.MouseEvent<HTMLImageElement>) => {
+      // Buffered characters belong to the field that is focused right now, not to
+      // whatever this click is about to focus.
+      await flushTyping();
+
       const rect = event.currentTarget.getBoundingClientRect();
       const scale = Math.min(rect.width / viewport.width, rect.height / viewport.height);
       if (!Number.isFinite(scale) || scale <= 0) return;
@@ -132,30 +172,39 @@ export function useTeamsRemoteLogin() {
         setError(err instanceof Error ? err.message : 'Click failed');
       }
     },
-    [viewport],
+    [viewport, flushTyping],
   );
 
-  /** The agent only accepts a small allowlist of non-printable keys. */
-  const ALLOWED_KEYS = new Set([
-    'Enter', 'Tab', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
-    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  ]);
+  const keyDown = useCallback(
+    async (event: React.KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      event.preventDefault();
 
-  const keyDown = useCallback(async (event: React.KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    event.preventDefault();
-
-    try {
+      // Printable characters accumulate and go out as one request.
       if (event.key.length === 1) {
-        await api.post('/api/integrations/teams/remote/type', { text: event.key });
-      } else if (ALLOWED_KEYS.has(event.key)) {
-        await api.post('/api/integrations/teams/remote/key', { key: event.key });
+        typeBuffer.current += event.key;
+        if (typeBuffer.current.length >= TYPE_FLUSH_MAX_CHARS) {
+          await flushTyping();
+          return;
+        }
+        if (flushTimer.current) clearTimeout(flushTimer.current);
+        flushTimer.current = setTimeout(() => void flushTyping(), TYPE_FLUSH_MS);
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Key press failed');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+      if (!ALLOWED_KEYS.has(event.key)) return;
+
+      // Order matters: an Enter that overtakes the buffered text would submit an
+      // empty field.
+      await flushTyping();
+      try {
+        await api.post('/api/integrations/teams/remote/key', { key: event.key });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Key press failed');
+      }
+    },
+    [flushTyping],
+  );
 
   /**
    * Manual save. The agent refuses unless the chat list actually rendered, so a
@@ -188,6 +237,7 @@ export function useTeamsRemoteLogin() {
       const wasStreaming = statusRef.current === 'streaming' || statusRef.current === 'starting';
       stopped.current = true;
       if (pollTimer.current) clearTimeout(pollTimer.current);
+      if (flushTimer.current) clearTimeout(flushTimer.current);
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       if (wasStreaming) {
         // Fire and forget: the component is already gone, nobody can act on a failure.

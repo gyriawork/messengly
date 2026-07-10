@@ -1444,6 +1444,19 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     } catch { /* socket not ready yet — non-critical */ }
   }
 
+  /**
+   * The remote browser is a stream: the frontend polls a frame roughly every
+   * 700 ms and posts clicks and keystrokes back. That alone approaches the
+   * global 100 req/min ceiling, and a login can run for minutes while the
+   * operator clears MFA. These routes get their own budget.
+   *
+   * They are superadmin-only and do nothing but proxy to the sidecar, which has
+   * its own single-browser mutex — so a generous limit costs nothing.
+   */
+  const remoteStreamRateLimit = {
+    config: { rateLimit: { max: 300, timeWindow: '1 minute' } },
+  };
+
   /** Agent errors the caller can act on stay 4xx; everything else is a bad gateway. */
   function sendTeamsAgentError(reply: FastifyReply, err: unknown) {
     if (err instanceof TeamsAgentError) {
@@ -1471,7 +1484,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/start',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         return reply.send(await teamsAgent.remoteStart());
@@ -1488,7 +1501,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.get(
     '/integrations/teams/remote/screenshot',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1518,7 +1531,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/click',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsClickSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'x and y must be numbers', 422);
@@ -1532,7 +1545,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/type',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsTypeSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'text must be 1–500 characters', 422);
@@ -1546,7 +1559,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/key',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsKeySchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'key is required', 422);
@@ -1564,7 +1577,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/save',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1585,7 +1598,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/stop',
-    { preHandler: authPreHandlers },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         return reply.send(await teamsAgent.remoteStop());
