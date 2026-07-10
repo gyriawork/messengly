@@ -279,8 +279,10 @@ async function pasteHtmlToCompose(page, compose, html, plain) {
 
 /**
  * Attach a single file.
- *   1. Probe the FilePicker button — present in 1:1 chats
- *   2. Fall back to clipboard paste — the only route in group chats
+ *   - Images always go through clipboard paste: FilePicker uploads them as a
+ *     file card, paste renders them inline as a picture in the chat.
+ *   - Everything else needs the FilePicker button — present only in 1:1 chats;
+ *     the clipboard cannot carry non-image data in a web context.
  *
  * Caller MUST call verifyAttachmentInCompose() afterwards; this only attempts
  * the upload, it does not verify success.
@@ -291,6 +293,12 @@ async function attachFile(page, file, chatLabel, requestId) {
   try {
     await page.locator(S.composeFooter).first().waitFor({ state: 'visible', timeout: 10_000 });
   } catch { /* proceed anyway */ }
+
+  if ((file.mimeType || '').startsWith('image/')) {
+    log('image attachment — pasting to render inline', { fileName: file.fileName });
+    await pasteAttachmentToCompose(page, file, log);
+    return;
+  }
 
   const attachSelectors = [
     S.attachFiles,
@@ -442,6 +450,17 @@ async function verifyAttachmentInCompose(page, fileName, chatLabel, requestId) {
         return true;
       }
     }
+
+    // A pasted image lands INLINE in the compose text field, not in the footer
+    // attachment strip. It renders from a blob:/data: URL — emoji images come
+    // from the CDN, so this cannot false-positive on them.
+    const inlineImg = await page.locator(S.compose).locator('img[src^="blob:"], img[src^="data:"]').first()
+      .isVisible({ timeout: 500 }).catch(() => false);
+    if (inlineImg) {
+      log('attachment verified as inline image in compose');
+      return true;
+    }
+
     await page.waitForTimeout(500);
   }
 
