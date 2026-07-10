@@ -66,6 +66,16 @@ await fastify.register(cors, {
     }
   },
   credentials: true,
+  /**
+   * Cross-origin JavaScript can only read the CORS-safelisted response headers
+   * unless they are named here. The web app lives on a different origin than the
+   * API (localhost:3000 vs :3001, messengly.app vs Railway), so without this the
+   * Teams login screen cannot tell whether a frame carried a completed login.
+   *
+   * meetsbroadcast never needed it: nginx proxies /api to the backend, so its
+   * frontend and API share one origin.
+   */
+  exposedHeaders: ['X-Logged-In'],
 });
 
 await fastify.register(helmet, {

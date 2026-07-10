@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 
 /**
  * Drives the Teams login flow.
@@ -16,7 +16,15 @@ import { api } from '@/lib/api';
  * itself; it tells us through the `X-Logged-In` response header.
  */
 
-const POLL_INTERVAL_MS = 700;
+const POLL_INTERVAL_MS = 300;
+
+/**
+ * Playwright throws transient errors while Microsoft bounces the page through its
+ * login redirect chain — a protocol glitch mid-navigation is not a dead session.
+ * meetsbroadcast rides these out instead of killing a login that is going fine.
+ */
+const MAX_CONSECUTIVE_ERRORS = 10;
+const ERROR_BACKOFF_MS = 500;
 
 /**
  * Typed characters are batched instead of sent one request per keystroke. A
@@ -54,6 +62,7 @@ export function useTeamsRemoteLogin() {
 
   const typeBuffer = useRef('');
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consecutiveErrors = useRef(0);
 
   /** Object URLs leak until revoked, and we mint one per frame. */
   const showFrame = useCallback((blob: Blob) => {
@@ -71,9 +80,14 @@ export function useTeamsRemoteLogin() {
   const poll = useCallback(async () => {
     if (stopped.current) return;
     try {
-      const { blob, headers } = await api.getBinary('/api/integrations/teams/remote/screenshot');
+      // The timestamp defeats heuristic caching of error responses, which would
+      // otherwise poison the loop. Successful frames already say no-store.
+      const { blob, headers } = await api.getBinary(
+        `/api/integrations/teams/remote/screenshot?t=${Date.now()}`,
+      );
       if (stopped.current) return;
 
+      consecutiveErrors.current = 0;
       showFrame(blob);
 
       if (headers.get('X-Logged-In') === 'true') {
@@ -83,8 +97,23 @@ export function useTeamsRemoteLogin() {
       pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
     } catch (err) {
       if (stopped.current) return;
-      setError(err instanceof Error ? err.message : 'Lost the remote browser');
-      setStatus('error');
+
+      // The agent says there is no remote browser any more. That is an ending,
+      // not a failure — somebody stopped it, or it timed out on inactivity.
+      if (err instanceof ApiError && err.statusCode === 409) {
+        stopped.current = true;
+        setFrameUrl(null);
+        setStatus('idle');
+        return;
+      }
+
+      consecutiveErrors.current += 1;
+      if (consecutiveErrors.current >= MAX_CONSECUTIVE_ERRORS) {
+        setError(err instanceof Error ? err.message : 'Lost the remote browser');
+        setStatus('error');
+        return;
+      }
+      pollTimer.current = setTimeout(poll, ERROR_BACKOFF_MS);
     }
   }, [showFrame, finish]);
 
@@ -92,8 +121,24 @@ export function useTeamsRemoteLogin() {
     setError(null);
     setStatus('starting');
     stopped.current = false;
+    consecutiveErrors.current = 0;
+
+    const startOnce = () => api.post<RemoteStartResponse>('/api/integrations/teams/remote/start');
+
     try {
-      const res = await api.post<RemoteStartResponse>('/api/integrations/teams/remote/start');
+      let res: RemoteStartResponse;
+      try {
+        res = await startOnce();
+      } catch (err) {
+        // A browser left behind by an abandoned attempt blocks a new one. Tear it
+        // down and retry once, rather than making the operator work it out.
+        if (err instanceof ApiError && err.code === 'REMOTE_ALREADY_ACTIVE') {
+          await api.post('/api/integrations/teams/remote/stop').catch(() => {});
+          res = await startOnce();
+        } else {
+          throw err;
+        }
+      }
       setViewport(res.viewport);
       setStatus('streaming');
       void poll();
