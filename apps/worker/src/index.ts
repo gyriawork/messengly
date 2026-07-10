@@ -513,35 +513,45 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
     byMessenger.set(m, arr);
   }
 
-  // Process each messenger group
-  for (const [messenger, chats] of byMessenger) {
-    const antibanConfig = await getAntibanSettings(messenger, organizationId);
-    log.info(`Sending ${chats.length} messages via ${messenger}`, { broadcastId });
+  // Parse attachments from broadcast JSON field
+  const broadcastAttachments = Array.isArray(broadcast.attachments)
+    ? (broadcast.attachments as Array<{ url: string; filename?: string; originalName?: string; mimeType: string; size: number }>).map(a => ({
+        url: a.url,
+        filename: a.filename || a.originalName || 'attachment',
+        mimeType: a.mimeType,
+        size: a.size,
+      }))
+    : undefined;
 
-    // Parse attachments from broadcast JSON field
-    const broadcastAttachments = Array.isArray(broadcast.attachments)
-      ? (broadcast.attachments as Array<{ url: string; filename?: string; originalName?: string; mimeType: string; size: number }>).map(a => ({
-          url: a.url,
-          filename: a.filename || a.originalName || 'attachment',
-          mimeType: a.mimeType,
-          size: a.size,
-        }))
-      : undefined;
+  // Messengers send in parallel: each has its own adapter, session and antiban
+  // pacing, so they cannot interfere — and a slow Teams browser batch must not
+  // hold up Telegram. allSettled so one messenger's crash doesn't strand the
+  // others' rows before finalize.
+  const outcomes = await Promise.allSettled(
+    [...byMessenger.entries()].map(async ([messenger, chats]) => {
+      const antibanConfig = await getAntibanSettings(messenger, organizationId);
+      log.info(`Sending ${chats.length} messages via ${messenger}`, { broadcastId });
 
-    await sendMessengerBatch(
-      broadcastId,
-      organizationId,
-      broadcast.messageText,
-      chats.map((c) => ({
-        id: c.id,
-        chatId: c.chatId,
-        chat: { externalChatId: c.chat.externalChatId, messenger: c.chat.messenger },
-        retryCount: c.retryCount,
-      })),
-      antibanConfig,
-      false,
-      broadcastAttachments,
-    );
+      await sendMessengerBatch(
+        broadcastId,
+        organizationId,
+        broadcast.messageText,
+        chats.map((c) => ({
+          id: c.id,
+          chatId: c.chatId,
+          chat: { externalChatId: c.chat.externalChatId, messenger: c.chat.messenger },
+          retryCount: c.retryCount,
+        })),
+        antibanConfig,
+        false,
+        broadcastAttachments,
+      );
+    }),
+  );
+  for (const o of outcomes) {
+    if (o.status === 'rejected') {
+      log.error('Messenger batch crashed', { broadcastId, error: String(o.reason) });
+    }
   }
 
   // Finalize
@@ -586,56 +596,64 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
     byMessenger.set(m, arr);
   }
 
-  for (const [messenger, chats] of byMessenger) {
-    const antibanConfig = await getAntibanSettings(messenger, organizationId);
+  // Same parallelism as the initial send: messengers are independent.
+  const retryOutcomes = await Promise.allSettled(
+    [...byMessenger.entries()].map(async ([messenger, chats]) => {
+      const antibanConfig = await getAntibanSettings(messenger, organizationId);
 
-    // Filter out chats that have exceeded max retry attempts
-    const retriable: typeof chats = [];
-    const exhausted: typeof chats = [];
+      // Filter out chats that have exceeded max retry attempts
+      const retriable: typeof chats = [];
+      const exhausted: typeof chats = [];
 
-    for (const bc of chats) {
-      if (bc.retryCount >= antibanConfig.maxRetryAttempts) {
-        exhausted.push(bc);
-      } else {
-        retriable.push(bc);
+      for (const bc of chats) {
+        if (bc.retryCount >= antibanConfig.maxRetryAttempts) {
+          exhausted.push(bc);
+        } else {
+          retriable.push(bc);
+        }
       }
-    }
 
-    // Mark exhausted chats
-    if (exhausted.length > 0) {
-      await prisma.broadcastChat.updateMany({
-        where: { id: { in: exhausted.map((c) => c.id) } },
-        data: { status: 'retry_exhausted' },
-      });
-      log.info(`${exhausted.length} chats exhausted retries for ${messenger}`, { broadcastId });
-    }
+      // Mark exhausted chats
+      if (exhausted.length > 0) {
+        await prisma.broadcastChat.updateMany({
+          where: { id: { in: exhausted.map((c) => c.id) } },
+          data: { status: 'retry_exhausted' },
+        });
+        log.info(`${exhausted.length} chats exhausted retries for ${messenger}`, { broadcastId });
+      }
 
-    if (retriable.length > 0) {
-      log.info(`Retrying ${retriable.length} messages via ${messenger}`, { broadcastId });
+      if (retriable.length > 0) {
+        log.info(`Retrying ${retriable.length} messages via ${messenger}`, { broadcastId });
 
-      const retryAttachments = Array.isArray(broadcast.attachments)
-        ? (broadcast.attachments as Array<{ url: string; filename?: string; originalName?: string; mimeType: string; size: number }>).map(a => ({
-            url: a.url,
-            filename: a.filename || a.originalName || 'attachment',
-            mimeType: a.mimeType,
-            size: a.size,
-          }))
-        : undefined;
+        const retryAttachments = Array.isArray(broadcast.attachments)
+          ? (broadcast.attachments as Array<{ url: string; filename?: string; originalName?: string; mimeType: string; size: number }>).map(a => ({
+              url: a.url,
+              filename: a.filename || a.originalName || 'attachment',
+              mimeType: a.mimeType,
+              size: a.size,
+            }))
+          : undefined;
 
-      await sendMessengerBatch(
-        broadcastId,
-        organizationId,
-        broadcast.messageText,
-        retriable.map((c) => ({
-          id: c.id,
-          chatId: c.chatId,
-          chat: { externalChatId: c.chat.externalChatId, messenger: c.chat.messenger },
-          retryCount: c.retryCount,
-        })),
-        antibanConfig,
-        true,
-        retryAttachments,
-      );
+        await sendMessengerBatch(
+          broadcastId,
+          organizationId,
+          broadcast.messageText,
+          retriable.map((c) => ({
+            id: c.id,
+            chatId: c.chatId,
+            chat: { externalChatId: c.chat.externalChatId, messenger: c.chat.messenger },
+            retryCount: c.retryCount,
+          })),
+          antibanConfig,
+          true,
+          retryAttachments,
+        );
+      }
+    }),
+  );
+  for (const o of retryOutcomes) {
+    if (o.status === 'rejected') {
+      log.error('Messenger retry batch crashed', { broadcastId, error: String(o.reason) });
     }
   }
 

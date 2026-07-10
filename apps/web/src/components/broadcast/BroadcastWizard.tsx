@@ -18,7 +18,6 @@ import {
   Search,
   X,
   Paperclip,
-  Sliders,
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -81,7 +80,6 @@ const STEPS = [
   { label: 'Compose', icon: FileText },
   { label: 'Recipients', icon: Users },
   { label: 'Schedule', icon: Clock },
-  { label: 'Messengers', icon: Sliders },
   { label: 'Review', icon: Eye },
 ] as const;
 
@@ -98,12 +96,6 @@ export function BroadcastWizard() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [broadcastAttachments, setBroadcastAttachments] = useState<BroadcastAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [messengerPriority, setMessengerPriority] = useState<MessengerType[]>([
-    'telegram',
-    'slack',
-    'whatsapp',
-    'teams',
-  ]);
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
@@ -212,17 +204,8 @@ export function BroadcastWizard() {
           return;
         }
       }
-    } else if (step === 3) {
-      // Messenger priority validation - ensure at least one messenger is selected
-      const hasSelectedMessengers = messengerPriority.some((m) =>
-        groupedSelected[m],
-      );
-      if (!hasSelectedMessengers) {
-        toast.error('No messengers selected for this broadcast');
-        return;
-      }
     }
-    setStep((s) => Math.min(s + 1, 4));
+    setStep((s) => Math.min(s + 1, 3));
   }
 
   function handleBack() {
@@ -846,117 +829,8 @@ export function BroadcastWizard() {
           </div>
         )}
 
-        {/* Step 4: Messenger Priority & Antiban Settings */}
+        {/* Step 4: Review */}
         {step === 3 && (
-          <div className="space-y-6">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Messenger Priority & Antiban Settings
-            </h3>
-
-            {/* Risk meter visualization */}
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="text-xs font-medium uppercase text-slate-400 mb-3">
-                Delivery Risk Level
-              </p>
-              <div className="space-y-2">
-                {/* Risk bar */}
-                <div className="flex h-8 gap-1 rounded-lg overflow-hidden bg-slate-100">
-                  <div className="flex-1 bg-green-400" />
-                  <div className="flex-1 bg-yellow-400" />
-                  <div className="flex-1 bg-red-400" />
-                </div>
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Safe</span>
-                  <span>Moderate</span>
-                  <span>Aggressive</span>
-                </div>
-              </div>
-              <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-700">
-                <AlertCircle className="h-3.5 w-3.5" />
-                <span>Current settings: Low risk</span>
-              </div>
-            </div>
-
-            {/* Messenger priority list */}
-            <div className="space-y-3">
-              <p className="text-xs font-medium uppercase text-slate-400">
-                Messenger Delivery Order
-              </p>
-              <div className="rounded-lg border border-slate-200 divide-y">
-                {messengerPriority.map((messenger, index) => {
-                  const meta = messengerMeta[messenger];
-                  const chatCount = groupedSelected[messenger]?.length || 0;
-                  const hasChats = chatCount > 0;
-
-                  return (
-                    <div
-                      key={messenger}
-                      className={cn(
-                        'p-4 transition-colors',
-                        !hasChats && 'opacity-50 bg-slate-50',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-4 mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-                            {index + 1}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">
-                              {meta.label}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              {chatCount} chat{chatCount !== 1 ? 's' : ''} selected
-                            </p>
-                          </div>
-                        </div>
-                        {hasChats && (
-                          <span className={cn(
-                            'rounded-full px-2 py-0.5 text-xs font-medium',
-                            meta.bgClass,
-                            meta.textClass,
-                          )}>
-                            Ready
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Antiban settings display */}
-                      <div className="ml-11 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded bg-slate-50 p-2">
-                          <p className="text-slate-500 mb-0.5">Batch Size</p>
-                          <p className="font-semibold text-slate-900">10 msgs</p>
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          <p className="text-slate-500 mb-0.5">Delay</p>
-                          <p className="font-semibold text-slate-900">5s</p>
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          <p className="text-slate-500 mb-0.5">Per Hour</p>
-                          <p className="font-semibold text-slate-900">300 msgs</p>
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          <p className="text-slate-500 mb-0.5">Per Day</p>
-                          <p className="font-semibold text-slate-900">2000 msgs</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-              <p className="text-xs text-blue-600">
-                <span className="font-medium">Estimated delivery time:</span> Based on your settings, this broadcast will be fully delivered within ~2-4 hours depending on messenger rate limits.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Step 5: Review */}
-        {step === 4 && (
           <div className="space-y-6">
             <h3 className="text-sm font-semibold text-slate-900">
               Review Your Broadcast
@@ -1045,7 +919,7 @@ export function BroadcastWizard() {
         </button>
 
         <div className="flex gap-2">
-          {step === 4 ? (
+          {step === 3 ? (
             <>
               <button
                 onClick={handleSubmit(onSaveDraft)}
