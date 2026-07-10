@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { getAvatarColor, getInitials } from '@/lib/chat-utils';
 import { MessengerIcon } from './MessengerIcon';
 
-type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 interface ChatAvatarProps {
   name: string;

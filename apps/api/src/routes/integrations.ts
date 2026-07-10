@@ -13,6 +13,7 @@ let createAuthClient: any, storePendingAuth: any, getPendingAuth: any, removePen
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let StringSession: any, Api: any, computeCheck: any;
 import { startWhatsAppPairing, getQrCode, getPairingStatus, cancelPairing, WhatsAppAdapter } from '../integrations/whatsapp.js';
+import { teamsAgent, TeamsAgentError } from '../lib/teams-client.js';
 
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { getIO } from '../websocket/index.js';
@@ -40,7 +41,7 @@ const qrLogins = new Map<string, QrLoginState>();
 // ─── Zod Schemas ───
 
 const messengerParamSchema = z.object({
-  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
+  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']),
 });
 
 const connectTelegramSchema = z.object({
@@ -96,6 +97,9 @@ const credentialSchemas: Record<string, z.ZodType> = {
   slack: connectSlackSchema,
   whatsapp: connectWhatsAppSchema,
   gmail: connectGmailSchema,
+  // Teams carries no credentials: the sidecar owns the browser session.
+  // connect() simply asserts that the session is alive.
+  teams: z.object({}),
 };
 
 // ─── Helpers ───
@@ -1399,6 +1403,229 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           502,
         );
       }
+    },
+  );
+
+  // ─── Microsoft Teams ───
+  //
+  // Teams offers no OAuth and no API token for personal accounts. The teams-agent
+  // sidecar holds one browser session for the whole system, and an operator creates
+  // it by driving a streamed remote browser: we relay JPEG frames out and clicks and
+  // keystrokes back, so a human can clear MFA with their own eyes.
+  //
+  // The Integration row only records that a session exists. The session itself lives
+  // on the sidecar's volume — the same split as WhatsApp, where WAHA owns the session
+  // and Messengly stores a pointer.
+
+  async function upsertTeamsIntegration(organizationId: string, userId: string): Promise<void> {
+    const credentials = encryptCredentials({
+      status: 'connected',
+      lastCheckAt: new Date().toISOString(),
+    });
+
+    await prisma.integration.upsert({
+      where: { messenger_organizationId_userId: { messenger: 'teams', organizationId, userId } },
+      update: { credentials, status: 'connected', connectedAt: new Date() },
+      create: {
+        messenger: 'teams',
+        status: 'connected',
+        credentials,
+        organizationId,
+        userId,
+        connectedAt: new Date(),
+      },
+    });
+
+    await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+    await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+
+    try {
+      getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'connected' });
+    } catch { /* socket not ready yet — non-critical */ }
+  }
+
+  /** Agent errors the caller can act on stay 4xx; everything else is a bad gateway. */
+  function sendTeamsAgentError(reply: FastifyReply, err: unknown) {
+    if (err instanceof TeamsAgentError) {
+      const statusCode = err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 502;
+      return sendError(reply, err.code, err.message, statusCode);
+    }
+    return sendError(reply, 'MESSENGER_API_ERROR', err instanceof Error ? err.message : 'Teams agent error', 502);
+  }
+
+  // ─── GET /integrations/teams/status ───
+
+  fastify.get(
+    '/integrations/teams/status',
+    { preHandler: readPreHandlers },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        return reply.send(await teamsAgent.getSessionStatus());
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── POST /integrations/teams/remote/start ───
+
+  fastify.post(
+    '/integrations/teams/remote/start',
+    { preHandler: authPreHandlers },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        return reply.send(await teamsAgent.remoteStart());
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── GET /integrations/teams/remote/screenshot ───
+  // Returns a JPEG frame. The agent auto-saves the session the moment it detects a
+  // confirmed login, and reports that through the X-Logged-In header — so we persist
+  // the Integration here rather than making the browser ask a second time.
+
+  fastify.get(
+    '/integrations/teams/remote/screenshot',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      try {
+        const { image, loggedIn } = await teamsAgent.remoteScreenshot();
+        if (loggedIn) await upsertTeamsIntegration(organizationId, request.user.id);
+
+        return reply
+          .header('Content-Type', 'image/jpeg')
+          .header('Cache-Control', 'no-store')
+          .header('X-Logged-In', loggedIn ? 'true' : 'false')
+          .send(image);
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── POST /integrations/teams/remote/{click,type,key} ───
+
+  const teamsClickSchema = z.object({ x: z.number(), y: z.number() });
+  const teamsTypeSchema = z.object({ text: z.string().min(1).max(500) });
+  const teamsKeySchema = z.object({ key: z.string().min(1) });
+
+  fastify.post(
+    '/integrations/teams/remote/click',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = teamsClickSchema.safeParse(request.body);
+      if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'x and y must be numbers', 422);
+      try {
+        return reply.send(await teamsAgent.remoteClick(body.data.x, body.data.y));
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    '/integrations/teams/remote/type',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = teamsTypeSchema.safeParse(request.body);
+      if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'text must be 1–500 characters', 422);
+      try {
+        return reply.send(await teamsAgent.remoteType(body.data.text));
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  fastify.post(
+    '/integrations/teams/remote/key',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = teamsKeySchema.safeParse(request.body);
+      if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'key is required', 422);
+      try {
+        return reply.send(await teamsAgent.remoteKey(body.data.key));
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── POST /integrations/teams/remote/save ───
+  // Manual save. The agent refuses unless the chat list actually rendered, so a
+  // signed-out session can never be persisted as "connected".
+
+  fastify.post(
+    '/integrations/teams/remote/save',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      try {
+        const result = await teamsAgent.remoteSave();
+        await upsertTeamsIntegration(organizationId, request.user.id);
+        return reply.send(result);
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── POST /integrations/teams/remote/stop ───
+
+  fastify.post(
+    '/integrations/teams/remote/stop',
+    { preHandler: authPreHandlers },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        return reply.send(await teamsAgent.remoteStop());
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+    },
+  );
+
+  // ─── POST /integrations/teams/logout ───
+  // Signs Teams out for the whole system and drops the stored session. The generic
+  // /disconnect route only flips the Integration row; it cannot reach the sidecar.
+
+  fastify.post(
+    '/integrations/teams/logout',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      try {
+        await teamsAgent.destroySession();
+      } catch (err) {
+        return sendTeamsAgentError(reply, err);
+      }
+
+      await prisma.integration.updateMany({
+        where: { messenger: 'teams', organizationId },
+        data: { status: 'disconnected' },
+      });
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+      try {
+        getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'disconnected' });
+      } catch { /* socket not ready yet — non-critical */ }
+
+      return reply.send({ disconnected: true });
     },
   );
 }

@@ -30,6 +30,7 @@ const messengerMeta: Record<Messenger, { name: string; abbr: string; bgClass: st
   slack: { name: 'Slack', abbr: 'SL', bgClass: 'bg-messenger-sl-bg', textClass: 'text-messenger-sl-text' },
   whatsapp: { name: 'WhatsApp', abbr: 'WA', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text' },
   gmail: { name: 'Gmail', abbr: 'GM', bgClass: 'bg-messenger-gm-bg', textClass: 'text-messenger-gm-text' },
+  teams: { name: 'Microsoft Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text' },
 };
 
 function buildSchema(messenger: Messenger) {

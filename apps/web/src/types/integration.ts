@@ -1,4 +1,4 @@
-export type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+export type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 export type IntegrationStatus =
   | 'connected'

@@ -7,7 +7,7 @@ import { getOrgId } from '../middleware/rbac.js';
 
 // ─── Constants ───
 
-const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
+const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail', 'teams'] as const;
 type Messenger = (typeof MESSENGERS)[number];
 
 // ─── Schema ───
@@ -257,7 +257,9 @@ async function trendBuckets(
       entry = {
         bucket: key,
         total: 0,
-        byMessenger: { telegram: 0, slack: 0, whatsapp: 0, gmail: 0 },
+        // Derived from MESSENGERS rather than spelled out, so adding a messenger
+        // cannot silently leave a hole here.
+        byMessenger: Object.fromEntries(MESSENGERS.map((m) => [m, 0])) as Record<Messenger, number>,
       };
       byBucket.set(key, entry);
     }
@@ -318,12 +320,11 @@ async function byMessengerBreakdown(
 
   const totalMessages = msgRows.reduce((sum, r) => sum + toNumber(r.count), 0);
 
-  const result: Record<Messenger, PerMessengerStats> = {
-    telegram: { count: 0, percent: 0, activeChats: 0, inactiveChats: 0 },
-    slack: { count: 0, percent: 0, activeChats: 0, inactiveChats: 0 },
-    whatsapp: { count: 0, percent: 0, activeChats: 0, inactiveChats: 0 },
-    gmail: { count: 0, percent: 0, activeChats: 0, inactiveChats: 0 },
-  };
+  // Derived from MESSENGERS: a new messenger gets a zeroed row for free. The object
+  // literal sits inside the callback, so each messenger gets its own instance.
+  const result = Object.fromEntries(
+    MESSENGERS.map((m) => [m, { count: 0, percent: 0, activeChats: 0, inactiveChats: 0 }]),
+  ) as Record<Messenger, PerMessengerStats>;
 
   for (const row of msgRows) {
     if (!(MESSENGERS as readonly string[]).includes(row.messenger)) continue;

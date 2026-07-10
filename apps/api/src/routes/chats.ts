@@ -12,7 +12,7 @@ import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
 
-const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail']);
+const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']);
 
 const listChatsQuerySchema = z.object({
   messenger: messengerEnum.optional(),
@@ -460,7 +460,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   });
 
   const importBodySchema = z.object({
-    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
+    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']),
     // Accept either legacy string array or rich objects with name/chatType
     externalChatIds: z.union([
       z.array(z.string()).min(1).max(500),
@@ -531,7 +531,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   // Emits real-time progress via WebSocket so the wizard can show a progress bar.
 
   const importWithHistoryBodySchema = z.object({
-    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
+    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']),
     chats: z.array(z.object({
       externalChatId: z.string(),
       name: z.string(),

@@ -179,7 +179,7 @@ beforeAll(async () => {
   // Helper: create chat and return id
   async function chat(data: {
     ownerId: string;
-    messenger: 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+    messenger: 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
     name: string;
     externalChatId: string;
   }) {

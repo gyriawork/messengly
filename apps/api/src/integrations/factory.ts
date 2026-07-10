@@ -6,7 +6,7 @@ import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 
-const SUPPORTED_MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
+const SUPPORTED_MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail', 'teams'] as const;
 type SupportedMessenger = (typeof SUPPORTED_MESSENGERS)[number];
 
 /**
@@ -57,6 +57,12 @@ export async function createAdapter(
         clientSecret = platform.credentials.clientSecret;
       }
       return new GmailAdapter({ clientId, clientSecret, refreshToken: gmailCreds.refreshToken });
+    }
+    case 'teams': {
+      // No credentials to pass: the teams-agent sidecar owns the single browser
+      // session, exactly as WAHA owns the WhatsApp one.
+      const { TeamsAdapter } = await import('./teams.js');
+      return new TeamsAdapter();
     }
     default:
       throw new MessengerError(

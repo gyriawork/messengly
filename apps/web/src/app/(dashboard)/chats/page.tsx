@@ -44,6 +44,7 @@ const messengerConfig: Record<
   slack: { label: 'Slack', abbr: 'SL', bgClass: 'bg-messenger-sl-bg', textClass: 'text-messenger-sl-text', dotColor: 'bg-[#611f69]' },
   whatsapp: { label: 'WhatsApp', abbr: 'WA', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text', dotColor: 'bg-[#25D366]' },
   gmail: { label: 'Gmail', abbr: 'GM', bgClass: 'bg-messenger-gm-bg', textClass: 'text-messenger-gm-text', dotColor: 'bg-[#EA4335]' },
+  teams: { label: 'Microsoft Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text', dotColor: 'bg-[#4B53BC]' },
 };
 
 const chatTypeIcons: Record<string, typeof MessageSquare> = {

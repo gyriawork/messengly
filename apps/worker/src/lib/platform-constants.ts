@@ -1,7 +1,7 @@
 // Platform credential constants — duplicated from @messengly/shared
 // to avoid workspace dependency issues with Railway builds.
 
-export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
+export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail', 'teams'] as const;
 export type Messenger = (typeof MESSENGERS)[number];
 
 export interface PlatformField {
@@ -24,6 +24,9 @@ export const MESSENGER_PLATFORM_FIELDS: Record<Messenger, PlatformField[]> = {
     { key: 'clientSecret', label: 'Client Secret', type: 'password' },
   ],
   whatsapp: [],
+  // Teams authenticates through a browser session held by the teams-agent
+  // sidecar — no platform-level API keys to configure.
+  teams: [],
 };
 
 export const MESSENGER_ENV_VARS: Record<Messenger, Record<string, string>> = {
@@ -31,4 +34,5 @@ export const MESSENGER_ENV_VARS: Record<Messenger, Record<string, string>> = {
   slack: { clientId: 'SLACK_CLIENT_ID', clientSecret: 'SLACK_CLIENT_SECRET' },
   gmail: { clientId: 'GOOGLE_CLIENT_ID', clientSecret: 'GOOGLE_CLIENT_SECRET' },
   whatsapp: {},
+  teams: {},
 };

@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 interface MessengerIconProps {
   messenger: MessengerType;
@@ -59,11 +59,25 @@ function GmailSvg({ size }: { size: number }) {
   );
 }
 
+function TeamsSvg({ size }: { size: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
+      <circle cx="18.6" cy="5.9" r="2.1" fill="#5059C9" />
+      <path d="M15.2 9.6h6.2c.33 0 .6.27.6.6v5a3.5 3.5 0 0 1-3.5 3.5h-.1a3.5 3.5 0 0 1-3.5-3.5V9.6z" fill="#5059C9" />
+      <circle cx="12.1" cy="5.2" r="2.9" fill="#7B83EB" />
+      <path d="M16.2 9.6H8a.6.6 0 0 0-.6.6v6.9a4.4 4.4 0 0 0 4.4 4.4 4.4 4.4 0 0 0 4.4-4.4v-6.9a.6.6 0 0 0 0-.6z" fill="#7B83EB" />
+      <rect x="1.6" y="5.9" width="11" height="11" rx="1.1" fill="#4B53BC" />
+      <path d="M9.8 8.7H4.4v1.4h1.9v5.3h1.6v-5.3h1.9V8.7z" fill="#FFFFFF" />
+    </svg>
+  );
+}
+
 const ICON_MAP: Record<MessengerType, React.FC<{ size: number }>> = {
   telegram: TelegramSvg,
   slack: SlackSvg,
   whatsapp: WhatsAppSvg,
   gmail: GmailSvg,
+  teams: TeamsSvg,
 };
 
 export function MessengerIcon({ messenger, size = 24, className }: MessengerIconProps) {

@@ -42,7 +42,7 @@ const updateBroadcastBodySchema = z.object({
 
 const analyticsQuerySchema = z.object({
   period: z.string().regex(/^\d+d$/).default('30d'),
-  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']).optional(),
+  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']).optional(),
 });
 
 // ─── Helpers ───

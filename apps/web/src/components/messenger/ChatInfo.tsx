@@ -38,6 +38,7 @@ function getMessengerDotColor(messenger: MessengerType): string {
     slack: '#611f69',
     whatsapp: '#25D366',
     gmail: '#EA4335',
+    teams: '#4B53BC',
   };
   return map[messenger];
 }
@@ -48,6 +49,7 @@ function getMessengerLabel(messenger: MessengerType): string {
     slack: 'Slack',
     whatsapp: 'WhatsApp',
     gmail: 'Gmail',
+    teams: 'Microsoft Teams',
   };
   return map[messenger];
 }
@@ -58,6 +60,7 @@ function getMessengerBgClass(messenger: MessengerType): string {
     slack: 'bg-messenger-sl-bg text-messenger-sl-text',
     whatsapp: 'bg-messenger-wa-bg text-messenger-wa-text',
     gmail: 'bg-messenger-gm-bg text-messenger-gm-text',
+    teams: 'bg-messenger-mt-bg text-messenger-mt-text',
   };
   return map[messenger];
 }

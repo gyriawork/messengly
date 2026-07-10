@@ -6,7 +6,7 @@
 import type { Chat } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 
-export type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+export type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 export interface EnsureChatParams {
   organizationId: string;

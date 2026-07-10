@@ -17,6 +17,7 @@ const config: Config = {
           sl: { bg: '#eeedfe', text: '#3c3489' },
           wa: { bg: '#eaf3de', text: '#3b6d11' },
           gm: { bg: '#fcebeb', text: '#a32d2d' },
+          mt: { bg: '#eceafa', text: '#4b53bc' },
         },
       },
       fontFamily: {

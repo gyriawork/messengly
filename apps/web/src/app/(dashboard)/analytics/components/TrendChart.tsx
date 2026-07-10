@@ -22,6 +22,7 @@ const MESSENGER_COLORS: Record<AnalyticsMessenger, string> = {
   slack: 'bg-[#E01E5A]',
   whatsapp: 'bg-[#25D366]',
   gmail: 'bg-[#EA4335]',
+  teams: 'bg-[#4B53BC]',
 };
 
 const MESSENGER_LABELS: Record<AnalyticsMessenger, string> = {
@@ -29,6 +30,7 @@ const MESSENGER_LABELS: Record<AnalyticsMessenger, string> = {
   slack: 'Slack',
   whatsapp: 'WhatsApp',
   gmail: 'Gmail',
+  teams: 'Microsoft Teams',
 };
 
 export function TrendChart({

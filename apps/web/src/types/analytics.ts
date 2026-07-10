@@ -4,7 +4,7 @@
 export type AnalyticsScope = 'my' | 'org';
 export type AnalyticsPeriod = '7d' | '30d' | '90d';
 export type AnalyticsGranularity = 'day' | 'week' | 'month';
-export type AnalyticsMessenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+export type AnalyticsMessenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 export interface DeltaValue {
   value: number;

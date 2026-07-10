@@ -19,7 +19,7 @@ import { messageSyncQueue } from '../lib/queue.js';
 // ─── Schemas ───
 
 const messengerParamSchema = z.object({
-  messenger: z.enum(['telegram', 'slack', 'gmail', 'whatsapp']),
+  messenger: z.enum(['telegram', 'slack', 'gmail', 'whatsapp', 'teams']),
 });
 
 const telegramCredsSchema = z.object({
@@ -114,8 +114,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
       const { messenger } = params.data;
 
-      if (messenger === 'whatsapp') {
-        return sendError(reply, 'VALIDATION_ERROR', 'WhatsApp does not require platform credentials', 400);
+      // WhatsApp and Teams authenticate through their own sidecar sessions, so
+      // they declare no platform fields and have nothing to store here.
+      if (MESSENGER_PLATFORM_FIELDS[messenger].length === 0) {
+        return sendError(reply, 'VALIDATION_ERROR', `${messenger} does not require platform credentials`, 400);
       }
 
       const schema = credentialSchemas[messenger];

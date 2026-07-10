@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth.js';
 
 const analyticsQuerySchema = z.object({
   period: z.enum(['week', 'month', 'quarter']).optional().default('month'),
-  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']).optional(),
+  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']).optional(),
   createdBy: z.string().uuid().optional(),
   scope: z.enum(['org', 'my']).optional(),
 });

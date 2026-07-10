@@ -1,6 +1,6 @@
 // ─── ENUMS ───
 
-export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
+export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail', 'teams'] as const;
 export type Messenger = (typeof MESSENGERS)[number];
 
 export const USER_ROLES = ['superadmin', 'admin', 'user'] as const;
@@ -43,6 +43,7 @@ export const MESSENGER_COLORS: Record<Messenger, { bg: string; text: string; lab
   slack:     { bg: '#eeedfe', text: '#3c3489', label: 'SL' },
   whatsapp:  { bg: '#eaf3de', text: '#3b6d11', label: 'WA' },
   gmail:     { bg: '#fcebeb', text: '#a32d2d', label: 'GM' },
+  teams:     { bg: '#eceafa', text: '#4b53bc', label: 'MT' },
 };
 
 // ─── EDIT LIMITS ───
@@ -52,6 +53,7 @@ export const MESSAGE_EDIT_LIMITS: Record<Messenger, number | null> = {
   slack:     null,            // unlimited
   whatsapp:  15 * 60,        // 15 minutes in seconds
   gmail:     0,              // not supported (0 = disabled)
+  teams:     0,              // browser automation cannot reliably edit a sent message
 };
 
 // ─── DEFAULT ANTIBAN SETTINGS ───
@@ -91,6 +93,17 @@ export const DEFAULT_ANTIBAN: Record<Messenger, {
     maxMessagesPerHour: 80,
     maxMessagesPerDay: 400,
   },
+  // Teams runs through a real browser: every send costs seconds and looks like a
+  // human typing. Conservative on purpose. The agent adds its own 3–10s random
+  // jitter on top — these delays are deterministic, and randomization is what
+  // actually defeats rate-limit heuristics.
+  teams: {
+    messagesPerBatch: 5,
+    delayBetweenMessages: 8,
+    delayBetweenBatches: 300,
+    maxMessagesPerHour: 40,
+    maxMessagesPerDay: 200,
+  },
 };
 
 // ─── PLATFORM CONFIG ───
@@ -115,6 +128,9 @@ export const MESSENGER_PLATFORM_FIELDS: Record<Messenger, PlatformField[]> = {
     { key: 'clientSecret', label: 'Client Secret', type: 'password' },
   ],
   whatsapp: [],
+  // Teams authenticates through a browser session held by the teams-agent
+  // sidecar, so there are no platform-level API keys to configure.
+  teams: [],
 };
 
 export const MESSENGER_ENV_VARS: Record<Messenger, Record<string, string>> = {
@@ -122,6 +138,7 @@ export const MESSENGER_ENV_VARS: Record<Messenger, Record<string, string>> = {
   slack: { clientId: 'SLACK_CLIENT_ID', clientSecret: 'SLACK_CLIENT_SECRET' },
   gmail: { clientId: 'GOOGLE_CLIENT_ID', clientSecret: 'GOOGLE_CLIENT_SECRET' },
   whatsapp: {},
+  teams: {},
 };
 
 // ─── ERROR CODES ───

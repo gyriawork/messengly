@@ -5,7 +5,7 @@ import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
 import { ensureChat } from './services/chat-service.js';
 import { emojify } from 'node-emoji';
-type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
 const DEFAULT_ANTIBAN: Record<Messenger, {
   messagesPerBatch: number;
@@ -18,6 +18,9 @@ const DEFAULT_ANTIBAN: Record<Messenger, {
   whatsapp: { messagesPerBatch: 3, delayBetweenMessages: 15, delayBetweenBatches: 600, maxMessagesPerHour: 20, maxMessagesPerDay: 80 },
   slack: { messagesPerBatch: 30, delayBetweenMessages: 1, delayBetweenBatches: 30, maxMessagesPerHour: 200, maxMessagesPerDay: 2000 },
   gmail: { messagesPerBatch: 5, delayBetweenMessages: 8, delayBetweenBatches: 180, maxMessagesPerHour: 80, maxMessagesPerDay: 400 },
+  // Browser automation: slow and conspicuous. The teams-agent adds 3–10s of
+  // random jitter on top of these deterministic delays.
+  teams: { messagesPerBatch: 5, delayBetweenMessages: 8, delayBetweenBatches: 300, maxMessagesPerHour: 40, maxMessagesPerDay: 200 },
 };
 
 // ─── Redis connections ───

@@ -5,6 +5,7 @@ const MESSENGER_COLORS: Record<MessengerType, string> = {
   slack: '#611f69',
   whatsapp: '#25D366',
   gmail: '#EA4335',
+  teams: '#4b53bc',
 };
 
 export function getMessengerDotColor(messenger: MessengerType): string {
