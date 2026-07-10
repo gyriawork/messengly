@@ -219,6 +219,32 @@ export const api = {
   delete: <T>(endpoint: string, options?: RequestOptions) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
 
+  /**
+   * GET an endpoint that answers with binary data rather than JSON.
+   *
+   * Used by the Teams remote-login screen, which polls JPEG frames and reads the
+   * agent's login verdict out of a response header.
+   */
+  getBinary: async (endpoint: string): Promise<{ blob: Blob; headers: Headers }> => {
+    const token = await getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${BASE_URL}${injectOrgId(endpoint)}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const err = (body as { error?: { code?: string; message?: string } }).error ?? {};
+      throw new ApiError(response.status, err.code ?? 'REQUEST_FAILED', err.message ?? `Request failed (${response.status})`);
+    }
+
+    return { blob: await response.blob(), headers: response.headers };
+  },
+
   upload: async <T>(endpoint: string, file: File): Promise<T> => {
     const token = await getAccessToken();
     const formData = new FormData();

@@ -41,6 +41,7 @@ import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhats
 import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
 import { ConnectAndImportWizard } from './ConnectAndImportWizard';
+import { TeamsRemoteLogin } from './TeamsRemoteLogin';
 
 // ---------- Messenger metadata ----------
 
@@ -81,6 +82,15 @@ const messengers: MessengerInfo[] = [
     bgClass: 'bg-messenger-wa-bg',
     textClass: 'text-messenger-wa-text',
     badgeBg: 'bg-messenger-wa-bg',
+  },
+  {
+    key: 'teams',
+    name: 'Microsoft Teams',
+    abbr: 'MT',
+    description: 'Broadcast to Teams chats through a signed-in browser session',
+    bgClass: 'bg-messenger-mt-bg',
+    textClass: 'text-messenger-mt-text',
+    badgeBg: 'bg-messenger-mt-bg',
   },
   // Gmail intentionally hidden — service is focused on Slack/Telegram broadcasts.
 ];
@@ -763,6 +773,7 @@ function ConnectModal({
             isPending={connectMutation.isPending}
           />
         )}
+        {messenger.key === 'teams' && <TeamsRemoteLogin onClose={onClose} />}
       </div>
     </div>
   );
@@ -1312,6 +1323,9 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
             }
             if (m.key === 'whatsapp') {
               return <WhatsAppConnectForm onClose={onSuccess} />;
+            }
+            if (m.key === 'teams') {
+              return <TeamsRemoteLogin onClose={onSuccess} />;
             }
             if (m.key === 'gmail') {
               return (

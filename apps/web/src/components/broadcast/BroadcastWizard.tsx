@@ -60,6 +60,11 @@ const messengerMeta: Record<
     bgClass: 'bg-messenger-gm-bg',
     textClass: 'text-messenger-gm-text',
   },
+  teams: {
+    label: 'Microsoft Teams',
+    bgClass: 'bg-messenger-mt-bg',
+    textClass: 'text-messenger-mt-text',
+  },
 };
 
 const broadcastSchema = z.object({
@@ -97,6 +102,7 @@ export function BroadcastWizard() {
     'telegram',
     'slack',
     'whatsapp',
+    'teams',
   ]);
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
@@ -563,7 +569,7 @@ export function BroadcastWizard() {
                 />
               </div>
               <div className="flex gap-1">
-                {(['telegram', 'slack', 'whatsapp'] as const).map(
+                {(['telegram', 'slack', 'whatsapp', 'teams'] as const).map(
                   (m) => {
                     const meta = messengerMeta[m];
                     return (

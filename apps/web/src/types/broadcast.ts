@@ -142,6 +142,19 @@ export const ANTIBAN_SAFE_PRESETS: Record<string, AntibanSettings> = {
     maxRetryAttempts: 3,
     retryWindowHours: 6,
   },
+  // Teams is driven through a real browser, so every send costs seconds. The
+  // agent also adds 3–10s of random jitter on top of these delays.
+  teams: {
+    messenger: 'teams',
+    messagesPerBatch: 5,
+    delayBetweenMessages: 8,
+    delayBetweenBatches: 300,
+    maxMessagesPerHour: 40,
+    maxMessagesPerDay: 200,
+    autoRetryEnabled: true,
+    maxRetryAttempts: 3,
+    retryWindowHours: 6,
+  },
 };
 
 // ─── Moderate presets — balanced speed vs safety ───
@@ -186,6 +199,18 @@ export const ANTIBAN_MODERATE_PRESETS: Record<string, AntibanSettings> = {
     delayBetweenBatches: 120,
     maxMessagesPerHour: 60,
     maxMessagesPerDay: 500,
+    autoRetryEnabled: true,
+    maxRetryAttempts: 3,
+    retryWindowHours: 6,
+  },
+  // Still cautious: the bottleneck is the browser, not Microsoft's rate limits.
+  teams: {
+    messenger: 'teams',
+    messagesPerBatch: 8,
+    delayBetweenMessages: 5,
+    delayBetweenBatches: 180,
+    maxMessagesPerHour: 60,
+    maxMessagesPerDay: 400,
     autoRetryEnabled: true,
     maxRetryAttempts: 3,
     retryWindowHours: 6,

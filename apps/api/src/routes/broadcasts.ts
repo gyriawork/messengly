@@ -7,6 +7,12 @@ import { requireMinRole, getOrgId } from '../middleware/rbac.js';
 import { broadcastQueue } from '../lib/queue.js';
 import { getIO } from '../websocket/index.js';
 
+/**
+ * Marker the Teams adapter puts on a send whose delivery it could not confirm.
+ * Such a chat must never be retried — the message may already be there.
+ */
+const UNVERIFIED_PREFIX = 'unverified:';
+
 // ─── Zod Schemas ───
 
 const broadcastStatusEnum = z.enum([
@@ -748,11 +754,29 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return reply.status(409).send({ error: { code: 'BROADCAST_ALREADY_SENT', message: `Broadcast is already ${broadcast.status}`, statusCode: 409 } });
       }
 
-      // Reset failed chats to retrying
+      // A send the Teams agent could not confirm may already have been delivered:
+      // the compose box emptied, but the bubble could not be re-matched in the
+      // virtualized feed. Retrying would put a second copy in a real chat, so these
+      // are terminal. The adapter marks them by prefixing the reason.
+      const unverified = await prisma.broadcastChat.updateMany({
+        where: {
+          broadcastId: id,
+          status: 'failed',
+          errorReason: { startsWith: UNVERIFIED_PREFIX },
+        },
+        data: { status: 'retry_exhausted' },
+      });
+
+      // Reset the genuinely failed chats to retrying. `errorReason: null` would
+      // otherwise be matched by `NOT startsWith`, so spell the null case out.
       const resetResult = await prisma.broadcastChat.updateMany({
         where: {
           broadcastId: id,
           status: { in: ['failed', 'retry_exhausted'] },
+          OR: [
+            { errorReason: null },
+            { NOT: { errorReason: { startsWith: UNVERIFIED_PREFIX } } },
+          ],
         },
         data: { status: 'retrying', errorReason: null },
       });
@@ -760,7 +784,14 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       if (resetResult.count === 0) {
         // Roll back broadcast status — no failed chats to retry
         await prisma.broadcast.update({ where: { id }, data: { status: 'partially_failed' } });
-        return sendError(reply, 'VALIDATION_ERROR', 'No failed chats to retry', 422);
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          unverified.count > 0
+            ? `No chats can be retried: ${unverified.count} may already have been delivered and would duplicate`
+            : 'No failed chats to retry',
+          422,
+        );
       }
 
       // Enqueue retry job
