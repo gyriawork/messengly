@@ -42,7 +42,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
             <div className="space-y-1 text-xs text-indigo-700">
               <p>
                 Teams has no API login for personal accounts, so we open a browser on the
-                server and show it to you here. Sign in exactly as you normally would —
+                server and show it to you here. Sign in exactly as you normally would,
                 including two-factor codes.
               </p>
               <p className="text-indigo-600">
@@ -96,7 +96,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="text-center text-xs text-slate-500">
-            Click the picture and type as usual — we\u2019ll save everything once your chats appear.
+            Click the picture and type as usual. We\u2019ll save everything once your chats appear.
           </p>
 
           <div className="mx-auto flex max-w-md gap-2">

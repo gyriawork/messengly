@@ -108,10 +108,10 @@ function calculateRiskScore(
 
   if (score <= 25) {
     zone = 'safe';
-    description = 'You\u2019re sending at a relaxed pace — accounts stay comfortably under the radar.';
+    description = 'You\u2019re sending at a relaxed pace. Accounts stay comfortably under the radar.';
   } else if (score <= 50) {
     zone = 'moderate';
-    description = 'A bit brisk. Keep an eye on delivery — smaller batches would make this safer.';
+    description = 'A bit brisk. Smaller batches or longer pauses would make this safer.';
   } else if (score <= 75) {
     zone = 'risky';
     description = 'This pace can look like spam to the messengers. Worth slowing down.';

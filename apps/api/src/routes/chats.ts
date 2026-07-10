@@ -429,7 +429,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(
           reply,
           'CHAT_IN_ACTIVE_BROADCAST',
-          `Cannot delete chat — it is part of an active broadcast "${activeBroadcast.broadcast.name}" (${activeBroadcast.broadcast.status})`,
+          `This chat is part of the active broadcast "${activeBroadcast.broadcast.name}" (${activeBroadcast.broadcast.status}), so it can\u2019t be deleted right now`,
           409,
         );
       }

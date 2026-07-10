@@ -114,7 +114,7 @@ function ChatSelector({
         {sorted.length === 0 && (
           <p className="p-4 text-center text-sm text-slate-400">
             {chats.length === 0
-              ? 'You\u2019re all caught up — every chat is already in Messengly'
+              ? 'You\u2019re all caught up. Every chat is already in Messengly'
               : 'No chats found'}
           </p>
         )}
@@ -339,7 +339,7 @@ export function ConnectAndImportWizard({
                 {step === 'selecting' && 'Pick the chats you want in Messengly'}
                 {step === 'importing' && 'Bringing in your chats and their history'}
                 {step === 'done' && 'All set'}
-                {step === 'error' && 'That didn\u2019t work — give it another try'}
+                {step === 'error' && 'That didn\u2019t work. Give it another try'}
               </p>
             </div>
           </div>

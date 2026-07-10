@@ -472,7 +472,7 @@ function getRiskDescription(
   zone: 'safe' | 'moderate' | 'risky' | 'dangerous',
 ): string {
   const descriptions = {
-    safe: 'You\u2019re sending at a relaxed pace — accounts stay comfortably under the radar.',
+    safe: 'You\u2019re sending at a relaxed pace. Accounts stay comfortably under the radar.',
     moderate: 'A bit brisk. Smaller batches or longer pauses would make this safer.',
     risky: 'This pace can look like spam to the messengers. Worth slowing down.',
     dangerous: 'At this speed a ban is a real possibility. Ease off the volume and add delays.',

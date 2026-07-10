@@ -375,7 +375,7 @@ async function sendMessengerBatch(
         if (remainingIds.length > 0) {
           await prisma.broadcastChat.updateMany({
             where: { id: { in: remainingIds } },
-            data: { status: 'skipped', errorReason: `Skipped — ${messenger} halted: ${errorReason}` },
+            data: { status: 'skipped', errorReason: `Skipped: ${messenger} halted (${errorReason})` },
           });
           skipped += remainingIds.length;
         }

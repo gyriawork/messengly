@@ -936,7 +936,7 @@ export default function ChatsPage() {
             title="No chats yet"
             description={
               isSuperadmin
-                ? 'Connect a messenger — your chats will be imported automatically.'
+                ? 'Connect a messenger and your chats will show up here.'
                 : 'No chats have been imported yet. Ask your administrator to connect a messenger.'
             }
             compact
@@ -1042,7 +1042,7 @@ export default function ChatsPage() {
             title="No chats yet"
             description={
               isSuperadmin
-                ? 'Connect a messenger — your chats will be imported automatically.'
+                ? 'Connect a messenger and your chats will show up here.'
                 : 'No chats have been imported yet. Ask your administrator to connect a messenger.'
             }
             action={

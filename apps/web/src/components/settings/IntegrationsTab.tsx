@@ -253,7 +253,7 @@ function TelegramConnectForm({
         <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
           <div className="space-y-1 text-xs text-blue-700">
-            <p className="font-medium">Scan to connect — no code needed</p>
+            <p className="font-medium">Scan to connect, no code needed</p>
             <p>
               On your phone: <b>Telegram → Settings → Devices → Link Desktop Device</b>, then scan
               this QR.
@@ -934,65 +934,42 @@ function IntegrationCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg bg-white shadow-xs">
-      {/* Colored top stripe */}
-      <div className={cn('h-1.5', info.bgClass)} />
-
-      <div className="p-5">
-        {/* Header row */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <MessengerIcon messenger={info.key} size={48} />
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">
-                {info.name}
-              </h3>
-              <p className="text-xs text-slate-500">{info.description}</p>
-            </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-xs sm:p-5">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* Identity */}
+        <MessengerIcon messenger={info.key} size={44} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-slate-900">
+              {info.name}
+            </h3>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                config.badgeClass,
+              )}
+            >
+              <span className={cn('h-1.5 w-1.5 rounded-full', config.dotClass)} />
+              {config.label}
+            </span>
           </div>
-
-          {/* Status badge */}
-          <span
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-              config.badgeClass,
-            )}
-          >
-            <span className={cn('h-1.5 w-1.5 rounded-full', config.dotClass)} />
-            {config.label}
-          </span>
-        </div>
-
-        {/* Connected info */}
-        {integration && status !== 'disconnected' && (
-          <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2.5">
-            <p className="text-xs text-slate-500">
+          <p className="mt-0.5 truncate text-xs text-slate-500">{info.description}</p>
+          {integration && status !== 'disconnected' && (
+            <p className="mt-0.5 text-xs text-slate-400">
               Connected since{' '}
-              <span className="font-medium text-slate-700">
+              <span className="font-medium text-slate-600">
                 {formatDate(integration.connectedAt)}
               </span>
             </p>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Warning for expired states */}
-        {needsAttention && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 p-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-            <p className="text-xs text-amber-700">
-              {status === 'token_expired'
-                ? 'Your access token has expired. Please reconnect to restore messaging.'
-                : 'Your session has expired. Please reconnect to restore messaging.'}
-            </p>
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div className="mt-4 flex gap-2">
+        {/* Actions */}
+        <div className="flex shrink-0 items-center gap-2">
           {status === 'disconnected' ? (
             <button
               onClick={onConnect}
-              className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
             >
               <Plug className="h-4 w-4" />
               Connect
@@ -1003,7 +980,7 @@ function IntegrationCard({
                 onClick={handleReconnect}
                 disabled={reconnectMutation.isPending}
                 className={cn(
-                  'flex flex-1 items-center justify-center gap-2 rounded border-[1.5px] px-4 py-2 text-sm font-medium transition-all hover:-translate-y-px',
+                  'flex items-center gap-2 rounded border-[1.5px] px-3 py-2 text-sm font-medium transition-all hover:-translate-y-px',
                   needsAttention
                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                     : 'border-slate-200 text-slate-700 hover:bg-slate-50',
@@ -1018,7 +995,7 @@ function IntegrationCard({
               </button>
               <button
                 onClick={onSettings}
-                className="flex items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
+                className="flex items-center gap-2 rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
                 Settings
@@ -1026,7 +1003,7 @@ function IntegrationCard({
               <button
                 onClick={handleDisconnect}
                 disabled={disconnectMutation.isPending}
-                className="flex items-center justify-center gap-2 rounded border-[1.5px] border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
+                className="flex items-center gap-2 rounded border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
               >
                 {disconnectMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1039,6 +1016,18 @@ function IntegrationCard({
           )}
         </div>
       </div>
+
+      {/* Expired-session warning spans the full row */}
+      {needsAttention && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-xs text-amber-700">
+            {status === 'token_expired'
+              ? 'Your access token has expired. Reconnect to keep messaging.'
+              : 'Your session has expired. Reconnect to keep messaging.'}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1267,7 +1256,7 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
             Connected Accounts
           </h2>
           <p className="text-sm text-slate-500">
-            Connect your messengers here — everything else builds on them.
+            Connect your messengers here. Everything else builds on them.
           </p>
         </div>
 
@@ -1279,7 +1268,7 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-3">
           {visibleMessengers.map((m) => (
             <IntegrationCard
               key={m.key}

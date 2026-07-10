@@ -323,7 +323,7 @@ function TemplateEditor({
           <label className="mb-1.5 block text-sm font-medium text-slate-700">
             Attachments{' '}
             <span className="font-normal text-slate-400">
-              (optional — sent with every broadcast that uses this template)
+              (optional, sent with every broadcast that uses this template)
             </span>
           </label>
           {attachments.length > 0 && (
