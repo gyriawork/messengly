@@ -49,9 +49,9 @@ const messengerConfig: Record<
 };
 
 const statusChip: Record<string, { label: string; className: string }> = {
-  active: { label: 'Active', className: 'bg-emerald-50 text-emerald-600' },
-  inactive: { label: 'Inactive', className: 'bg-rose-50 text-rose-600' },
-  'read-only': { label: 'Read-only', className: 'bg-amber-50 text-amber-600' },
+  active: { label: 'Active', className: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-300' },
+  inactive: { label: 'Inactive', className: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-300' },
+  'read-only': { label: 'Read-only', className: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-300' },
 };
 
 const chatTypeIcons: Record<string, typeof MessageSquare> = {
