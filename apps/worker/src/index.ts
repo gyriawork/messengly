@@ -206,6 +206,31 @@ async function sendMessengerBatch(
   const messenger = messengerChats[0]?.chat.messenger;
   if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0, skipped: 0 };
 
+  // Chats marked inactive by "Update chats" are skipped up front: the connected
+  // account cannot reach them, so a delivery attempt is guaranteed to fail. The
+  // wizard already hides them, but stale drafts, duplicated broadcasts and
+  // scheduled sends carry chat lists assembled before the status changed.
+  const chatStatuses = await prisma.chat.findMany({
+    where: { id: { in: messengerChats.map((c) => c.chatId) } },
+    select: { id: true, status: true },
+  });
+  const inactiveChatIds = new Set(
+    chatStatuses.filter((c) => c.status === 'inactive').map((c) => c.id),
+  );
+  const inactiveBcIds = messengerChats
+    .filter((bc) => inactiveChatIds.has(bc.chatId))
+    .map((bc) => bc.id);
+  if (inactiveBcIds.length > 0) {
+    await prisma.broadcastChat.updateMany({
+      where: { id: { in: inactiveBcIds } },
+      data: { status: 'skipped', errorReason: 'Chat is inactive — not reachable by the connected account' },
+    });
+    log.info(`Skipping ${inactiveBcIds.length} inactive ${messenger} chat(s)`, { broadcastId });
+    messengerChats = messengerChats.filter((bc) => !inactiveChatIds.has(bc.chatId));
+  }
+  const preSkipped = inactiveBcIds.length;
+  if (messengerChats.length === 0) return { sent: 0, failed: 0, skipped: preSkipped };
+
   // Convert Slack-style :emoji: shortcodes to real Unicode emoji so they render
   // correctly in every messenger (Telegram shows the raw code otherwise).
   messageText = emojify(messageText);
@@ -240,9 +265,12 @@ async function sendMessengerBatch(
         errorReason: `Adapter connection failed: ${err instanceof Error ? err.message : String(err)}`,
       },
     });
-    return { sent: 0, failed: messengerChats.length, skipped: 0 };
+    return { sent: 0, failed: messengerChats.length, skipped: preSkipped };
   }
 
+  // Runtime counter only; the up-front inactive skips join it in the return —
+  // mixing them here would corrupt the `remaining` progress arithmetic, which
+  // works off the already-filtered list.
   let sent = 0;
   let failed = 0;
   let skipped = 0;
@@ -362,7 +390,7 @@ async function sendMessengerBatch(
     // Non-critical
   }
 
-  return { sent, failed, skipped };
+  return { sent, failed, skipped: skipped + preSkipped };
 }
 
 /**

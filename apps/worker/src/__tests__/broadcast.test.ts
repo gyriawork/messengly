@@ -258,6 +258,38 @@ describe('Broadcast Worker', () => {
       );
     });
 
+    it('should skip inactive chats up front without attempting delivery', async () => {
+      stubDefaultBroadcast();
+
+      const active = makeBroadcastChat({ id: 'bc-active', messenger: 'telegram' });
+      const inactive = makeBroadcastChat({ id: 'bc-inactive', messenger: 'telegram' });
+      (prisma.broadcastChat.findMany as Mock)
+        .mockResolvedValueOnce([active, inactive]) // pendingChats
+        .mockResolvedValueOnce([{ status: 'sent' }, { status: 'skipped' }]); // finalizeBroadcast
+
+      // The reachability check reports the second chat as inactive.
+      (prisma.chat.findMany as Mock).mockResolvedValueOnce([
+        { id: active.chatId, status: 'active' },
+        { id: inactive.chatId, status: 'inactive' },
+      ]);
+
+      const adapter = makeSuccessAdapter();
+      (createAdapter as Mock).mockResolvedValue(adapter);
+
+      const job = mockJob('broadcast:send', { broadcastId: 'broadcast-1', organizationId: 'org-1' });
+      await broadcastProcessor(job);
+
+      expect(prisma.broadcastChat.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: ['bc-inactive'] } },
+          data: expect.objectContaining({ status: 'skipped' }),
+        }),
+      );
+      // Delivery was attempted only for the reachable chat.
+      expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+      expect(adapter.sendMessage).toHaveBeenCalledWith(active.chat.externalChatId, expect.any(String), expect.anything());
+    });
+
     it('should mark chats as failed when adapter sendMessage throws', async () => {
       stubDefaultBroadcast();
 

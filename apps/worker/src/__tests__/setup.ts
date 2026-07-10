@@ -55,6 +55,7 @@ vi.mock('../lib/prisma.js', () => {
       },
       chat: {
         findUnique: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi.fn(),
       },
       message: {
