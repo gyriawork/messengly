@@ -44,7 +44,8 @@ vi.mock('../lib/prisma.js', () => {
       broadcastChat: {
         findMany: vi.fn(),
         update: vi.fn(),
-        updateMany: vi.fn(),
+        // The startup sweep reads .count at module import — must resolve.
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       integration: {
         findFirst: vi.fn(),

@@ -316,6 +316,15 @@ async function sendMessengerBatch(
     }
 
     try {
+      // Record the attempt BEFORE it happens. If the worker dies inside
+      // sendMessage, this row must not look 'pending' after the restart — a
+      // blind re-send would put a duplicate message in a real chat. The
+      // startup sweep turns stranded 'sending' rows into unverified failures.
+      await prisma.broadcastChat.update({
+        where: { id: bc.id },
+        data: { status: 'sending' },
+      });
+
       await adapter.sendMessage(bc.chat.externalChatId, messageText, {
         attachments: attachments && attachments.length > 0 ? attachments : undefined,
       });
@@ -1491,7 +1500,30 @@ async function processGmailWatchRenewal(): Promise<void> {
 
 // ─── Worker Setup ───
 
+/**
+ * Rows stranded in 'sending' mean a previous worker died between the delivery
+ * attempt and the status write — the message may or may not have arrived.
+ * They become terminal, non-retriable failures: the `unverified:` prefix is
+ * what the retry route checks to refuse a re-send that could duplicate a
+ * message in a real chat.
+ */
+export async function sweepStrandedSends(): Promise<number> {
+  const swept = await prisma.broadcastChat.updateMany({
+    where: { status: 'sending' },
+    data: {
+      status: 'failed',
+      errorReason: 'unverified: worker restarted mid-send — the message may have been delivered, retry is blocked',
+    },
+  });
+  if (swept.count > 0) {
+    log.warn(`Swept ${swept.count} broadcast chat(s) stranded mid-send by a previous worker`, {});
+  }
+  return swept.count;
+}
+
 log.info('Worker service starting...');
+
+await sweepStrandedSends();
 
 const worker = new Worker<BroadcastSendPayload>(
   'broadcast',

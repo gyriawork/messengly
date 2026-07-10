@@ -258,6 +258,49 @@ describe('Broadcast Worker', () => {
       );
     });
 
+    it('should mark the chat as sending before the delivery attempt', async () => {
+      stubDefaultBroadcast();
+
+      const chat1 = makeBroadcastChat({ id: 'bc-idem', messenger: 'telegram' });
+      (prisma.broadcastChat.findMany as Mock)
+        .mockResolvedValueOnce([chat1])
+        .mockResolvedValueOnce([{ status: 'sent' }]);
+
+      const adapter = makeSuccessAdapter();
+      (createAdapter as Mock).mockResolvedValue(adapter);
+
+      const job = mockJob('broadcast:send', { broadcastId: 'broadcast-1', organizationId: 'org-1' });
+      await broadcastProcessor(job);
+
+      // The 'sending' write must land BEFORE the delivery attempt: it is the
+      // crash marker that prevents a blind re-send after a worker restart.
+      const updateCalls = (prisma.broadcastChat.update as Mock).mock.calls;
+      const sendingIdx = updateCalls.findIndex((c) => c[0]?.data?.status === 'sending' && c[0]?.where?.id === 'bc-idem');
+      const sentIdx = updateCalls.findIndex((c) => c[0]?.data?.status === 'sent' && c[0]?.where?.id === 'bc-idem');
+      expect(sendingIdx).toBeGreaterThanOrEqual(0);
+      expect(sentIdx).toBeGreaterThan(sendingIdx);
+
+      const sendingOrder = (prisma.broadcastChat.update as Mock).mock.invocationCallOrder[sendingIdx]!;
+      const sendMessageOrder = (adapter.sendMessage as Mock).mock.invocationCallOrder[0]!;
+      expect(sendingOrder).toBeLessThan(sendMessageOrder);
+    });
+
+    it('sweepStrandedSends turns stranded sending rows into unverified failures', async () => {
+      const mod = await import('../index.js');
+      (prisma.broadcastChat.updateMany as Mock).mockResolvedValueOnce({ count: 2 });
+
+      const swept = await mod.sweepStrandedSends();
+
+      expect(swept).toBe(2);
+      expect(prisma.broadcastChat.updateMany).toHaveBeenCalledWith({
+        where: { status: 'sending' },
+        data: {
+          status: 'failed',
+          errorReason: expect.stringMatching(/^unverified: /),
+        },
+      });
+    });
+
     it('should skip inactive chats up front without attempting delivery', async () => {
       stubDefaultBroadcast();
 
