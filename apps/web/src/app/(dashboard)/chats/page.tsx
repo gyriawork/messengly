@@ -68,14 +68,14 @@ function exportChatsToXls(chats: Chat[]) {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Tags', 'Last active'];
+  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Tags', 'Date created'];
   const rows = chats.map((c) => [
     c.name,
     messengerConfig[c.messenger]?.label ?? c.messenger,
     c.chatType,
     c.ownerName ?? '',
     (c.tags ?? []).map((t) => t.name).join(', '),
-    c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '',
+    formatDateCreated(c.createdAt),
   ]);
   const body =
     `<table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
@@ -435,14 +435,12 @@ function ChatRowActions({ chat }: { chat: Chat }) {
 }
 
 // Relative-time formatter shared by ChatsPage and GroupRow.
-function formatTime(iso?: string) {
+function formatDateCreated(iso?: string) {
   if (!iso) return '—';
   const d = new Date(iso);
-  const now = new Date();
-  const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
-  if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
-  if (diffH < 24) return `${Math.round(diffH)}h ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
 // ─── GroupRow ───
@@ -538,7 +536,11 @@ function GroupRow({
 
       {/* Last active */}
       <td className="px-4 py-3 text-xs text-slate-500">
-        {formatTime(group.lastActivityAt)}
+        {formatDateCreated(
+          new Date(
+            Math.min(...group.chats.map((c) => new Date(c.createdAt ?? 0).getTime())),
+          ).toISOString(),
+        )}
       </td>
 
       {/* Actions — N/A for groups */}
@@ -587,7 +589,7 @@ export default function ChatsPage() {
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate' | 'ownerName' | 'status'>('lastActivityAt');
+  const [sortBy, setSortBy] = useState<'createdAt' | 'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate' | 'ownerName' | 'status'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
 
@@ -658,6 +660,13 @@ export default function ChatsPage() {
         cmp = aStatus.localeCompare(bStatus);
       } else if (sortBy === 'lastMessageDate') {
         cmp = getLastMessageTime(a) - getLastMessageTime(b);
+      } else if (sortBy === 'createdAt') {
+        // A gmail group is as old as its oldest chat.
+        const getCreated = (r: ChatRow) =>
+          isChatGroup(r)
+            ? Math.min(...r.chats.map((c) => new Date(c.createdAt ?? 0).getTime()))
+            : new Date(r.createdAt ?? 0).getTime();
+        cmp = getCreated(a) - getCreated(b);
       } else {
         cmp = getLastActivity(a) - getLastActivity(b);
       }
@@ -839,7 +848,7 @@ export default function ChatsPage() {
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
           className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
-          <option value="lastActivityAt">Sort: Last Active</option>
+          <option value="createdAt">Sort: Date Created</option>
           <option value="lastMessageDate">Sort: Last Message</option>
           <option value="name">Sort: Name</option>
           <option value="chatType">Sort: Type</option>
@@ -1064,7 +1073,7 @@ export default function ChatsPage() {
                   Tags
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Last Active
+                  Date Created
                 </th>
                 <th className="w-10 px-3 py-3" />
               </tr>
@@ -1172,9 +1181,9 @@ export default function ChatsPage() {
                       </div>
                     </td>
 
-                    {/* Last active */}
+                    {/* Date created */}
                     <td className="px-4 py-3 text-xs text-slate-500">
-                      {formatTime(chat.lastActivityAt)}
+                      {formatDateCreated(chat.createdAt)}
                     </td>
 
                     {/* Actions — superadmin only (chat management) */}
