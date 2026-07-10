@@ -734,7 +734,13 @@ function ConnectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-md md:rounded-xl">
+      <div
+        className={cn(
+          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:rounded-xl',
+          // Teams renders a live 1600×900 remote browser the operator clicks around in.
+          messenger.key === 'teams' ? 'md:max-w-6xl' : 'md:max-w-md',
+        )}
+      >
         {/* Modal header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1291,14 +1297,21 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
       {/* FAQ Section */}
       <FaqSection />
 
+      {/* Teams connect only saves the browser session; chats are imported later
+          via Chats → Import Chats, the same as every other messenger. */}
+      {connectingMessenger && connectingMessenger.key === 'teams' && (
+        <ConnectModal
+          messenger={connectingMessenger}
+          onClose={() => setConnectingMessenger(null)}
+        />
+      )}
+
       {/* Connect + Import wizard */}
-      {connectingMessenger && (
+      {connectingMessenger && connectingMessenger.key !== 'teams' && (
         <ConnectAndImportWizard
           messenger={connectingMessenger.key}
           messengerName={connectingMessenger.name}
           isAlreadyConnected={integrationsByMessenger[connectingMessenger.key]?.status === 'connected'}
-          // Teams signs in through a live remote browser, which needs room to work in.
-          wideCredentialsStep={connectingMessenger.key === 'teams'}
           renderCredentialsForm={(onSuccess) => {
             const m = connectingMessenger;
             if (m.key === 'telegram') {
@@ -1325,9 +1338,6 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
             }
             if (m.key === 'whatsapp') {
               return <WhatsAppConnectForm onClose={onSuccess} />;
-            }
-            if (m.key === 'teams') {
-              return <TeamsRemoteLogin onClose={onSuccess} />;
             }
             if (m.key === 'gmail') {
               return (

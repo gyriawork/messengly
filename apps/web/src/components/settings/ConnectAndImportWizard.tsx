@@ -41,12 +41,6 @@ interface ConnectAndImportWizardProps {
   isAlreadyConnected?: boolean;
   /** Render prop: receives onSuccess callback to call when credentials are verified */
   renderCredentialsForm?: (onSuccess: () => void) => React.ReactNode;
-  /**
-   * Widen the dialog while the credentials step is showing. Teams needs it: that
-   * step renders a live 1600×900 browser the operator has to click around in.
-   * The later steps are a chat list, which reads better narrow.
-   */
-  wideCredentialsStep?: boolean;
   onClose: () => void;
 }
 
@@ -197,7 +191,6 @@ export function ConnectAndImportWizard({
   messengerName,
   isAlreadyConnected = false,
   renderCredentialsForm,
-  wideCredentialsStep = false,
   onClose,
 }: ConnectAndImportWizardProps) {
   const [step, setStep] = useState<WizardStep>(
@@ -319,18 +312,10 @@ export function ConnectAndImportWizard({
   const selectAll = () => setSelected(new Set(chats.map((c) => c.externalChatId)));
   const deselectAll = () => setSelected(new Set());
 
-  // Only the credentials step gets the extra width; the chat list stays narrow.
-  const wide = wideCredentialsStep && step === 'credentials';
-
   // ── Render ──
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div
-        className={cn(
-          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:rounded-xl',
-          wide ? 'md:max-w-6xl' : 'md:max-w-lg',
-        )}
-      >
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-lg md:rounded-xl">
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
