@@ -1387,7 +1387,15 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         try {
           await adapter.connect();
           const chats = await adapter.listChats();
-          return reply.send({ chats });
+
+          // Offer only chats that are not in Messengly yet. Soft-deleted chats
+          // stay importable — removing a chat and re-importing it is a real flow.
+          const existing = await prisma.chat.findMany({
+            where: { messenger, organizationId, deletedAt: null },
+            select: { externalChatId: true },
+          });
+          const imported = new Set(existing.map((c) => c.externalChatId));
+          return reply.send({ chats: chats.filter((c) => !imported.has(c.externalChatId)) });
         } finally {
           try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
         }

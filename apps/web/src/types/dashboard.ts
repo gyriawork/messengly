@@ -12,5 +12,6 @@ export interface DashboardStats {
     slack: { chats: number; connected: boolean };
     whatsapp: { chats: number; connected: boolean };
     gmail: { chats: number; connected: boolean };
+    teams: { chats: number; connected: boolean };
   };
 }

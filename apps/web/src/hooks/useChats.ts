@@ -253,6 +253,22 @@ export function useUpdateChat() {
   });
 }
 
+export interface RefreshStatusesResult {
+  results: Record<string, { checked: number; activated: number; deactivated: number }>;
+  errors: Record<string, string>;
+}
+
+/** Re-check every imported chat against its messenger and flip active/inactive. */
+export function useRefreshChatStatuses() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<RefreshStatusesResult>('/api/chats/refresh-statuses', {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+  });
+}
+
 export function useTags() {
   return useQuery({
     queryKey: ['tags'],

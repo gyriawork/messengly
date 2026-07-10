@@ -18,10 +18,11 @@ import {
   Loader2,
   ArrowUpDown,
   Download,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats } from '@/hooks/useChats';
+import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -45,6 +46,12 @@ const messengerConfig: Record<
   whatsapp: { label: 'WhatsApp', abbr: 'WA', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text', dotColor: 'bg-[#25D366]' },
   gmail: { label: 'Gmail', abbr: 'GM', bgClass: 'bg-messenger-gm-bg', textClass: 'text-messenger-gm-text', dotColor: 'bg-[#EA4335]' },
   teams: { label: 'Microsoft Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text', dotColor: 'bg-[#4B53BC]' },
+};
+
+const statusChip: Record<string, { label: string; className: string }> = {
+  active: { label: 'Active', className: 'bg-emerald-50 text-emerald-600' },
+  inactive: { label: 'Inactive', className: 'bg-rose-50 text-rose-600' },
+  'read-only': { label: 'Read-only', className: 'bg-amber-50 text-amber-600' },
 };
 
 const chatTypeIcons: Record<string, typeof MessageSquare> = {
@@ -486,6 +493,9 @@ function GroupRow({
         </div>
       </td>
 
+      {/* Status — N/A for groups */}
+      <td className="px-4 py-3 text-xs text-slate-300">—</td>
+
       {/* Messenger badge */}
       <td className="px-4 py-3">
         <span
@@ -542,6 +552,25 @@ export default function ChatsPage() {
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
   const [showImport, setShowImport] = useState(false);
+  const refreshStatuses = useRefreshChatStatuses();
+
+  const handleRefreshStatuses = () => {
+    refreshStatuses.mutate(undefined, {
+      onSuccess: (data) => {
+        const flipped = Object.values(data.results).reduce(
+          (n, r) => n + r.activated + r.deactivated, 0);
+        const failed = Object.entries(data.errors).map(([m, e]) => `${m}: ${e}`);
+        if (flipped === 0 && failed.length === 0) {
+          toast.success('All chats are up to date');
+        } else if (flipped > 0) {
+          toast.success(`Updated ${flipped} chat${flipped === 1 ? '' : 's'}`);
+        }
+        for (const f of failed) toast.warning(`Could not check ${f}`);
+      },
+      onError: (err) =>
+        toast.error(err instanceof Error ? err.message : 'Failed to update chats'),
+    });
+  };
   const [search, setSearch] = useState('');
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -666,13 +695,24 @@ export default function ChatsPage() {
           </p>
         </div>
         {/* Importing chats from a connected account is available to every user. */}
+        <div className="flex gap-2 self-start">
+        <button
+          onClick={handleRefreshStatuses}
+          disabled={refreshStatuses.isPending}
+          title="Re-check every chat against its messenger and mark unreachable ones inactive"
+          className="inline-flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px disabled:opacity-60"
+        >
+          <RefreshCw className={cn('h-4 w-4', refreshStatuses.isPending && 'animate-spin')} />
+          {refreshStatuses.isPending ? 'Updating…' : 'Update chats'}
+        </button>
         <button
           onClick={() => setShowImport(true)}
-          className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
         >
           <Download className="h-4 w-4" />
           Import chats
         </button>
+        </div>
       </div>
 
       {/* Filters bar */}
@@ -710,6 +750,7 @@ export default function ChatsPage() {
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
           <option value="read-only">Read-only</option>
         </select>
 
@@ -954,6 +995,9 @@ export default function ChatsPage() {
                   Chat
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
                   Messenger
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
@@ -1008,11 +1052,21 @@ export default function ChatsPage() {
                           <span className="text-sm font-medium text-slate-800">
                             {chat.name}
                           </span>
-                          {chat.status === 'read-only' && (
-                            <span className="ml-1.5 text-[10px] text-slate-400">read-only</span>
-                          )}
+
                         </div>
                       </div>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          (statusChip[chat.status] ?? statusChip.active).className,
+                        )}
+                      >
+                        {(statusChip[chat.status] ?? statusChip.active).label}
+                      </span>
                     </td>
 
                     {/* Messenger */}

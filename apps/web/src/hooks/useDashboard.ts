@@ -61,7 +61,7 @@ export function useDashboardStats(scope?: 'org' | 'my') {
         (i) => i.status === 'connected',
       );
 
-      const messengerChatCounts = { telegram: 0, slack: 0, whatsapp: 0, gmail: 0 };
+      const messengerChatCounts = { telegram: 0, slack: 0, whatsapp: 0, gmail: 0, teams: 0 };
       if (chatsData.status === 'fulfilled' && Array.isArray(chats.chats)) {
         for (const chat of chats.chats) {
           const m = chat.messenger as keyof typeof messengerChatCounts;
@@ -86,6 +86,7 @@ export function useDashboardStats(scope?: 'org' | 'my') {
           slack: { chats: messengerChatCounts.slack, connected: isConnected('slack') },
           whatsapp: { chats: messengerChatCounts.whatsapp, connected: isConnected('whatsapp') },
           gmail: { chats: messengerChatCounts.gmail, connected: isConnected('gmail') },
+          teams: { chats: messengerChatCounts.teams, connected: isConnected('teams') },
         },
       };
     },

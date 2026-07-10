@@ -120,7 +120,9 @@ export function BroadcastWizard() {
 
   const templates = templatesData?.templates || [];
 
-  const allChats = chatsData?.chats || [];
+  // Inactive chats were marked unreachable by "Update chats" — a broadcast to
+  // them is guaranteed to fail, so they are not offered as recipients.
+  const allChats = (chatsData?.chats || []).filter((c) => c.status !== 'inactive');
 
   const form = useForm<BroadcastFormData>({
     resolver: zodResolver(broadcastSchema),

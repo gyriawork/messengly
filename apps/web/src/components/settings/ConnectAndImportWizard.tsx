@@ -112,7 +112,11 @@ function ChatSelector({
       {/* Chat list */}
       <div className="max-h-[340px] overflow-y-auto rounded-lg border border-slate-200">
         {sorted.length === 0 && (
-          <p className="p-4 text-center text-sm text-slate-400">No chats found</p>
+          <p className="p-4 text-center text-sm text-slate-400">
+            {chats.length === 0
+              ? 'No new chats to import — everything is already in Messengly'
+              : 'No chats found'}
+          </p>
         )}
         {sorted.map((chat) => {
           const isSelected = selected.has(chat.externalChatId);
@@ -466,7 +470,7 @@ export function ConnectAndImportWizard({
                 }}
                 className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
               >
-                Go to Messenger
+                Go to Chats
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>

@@ -16,7 +16,7 @@ const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']
 
 const listChatsQuerySchema = z.object({
   messenger: messengerEnum.optional(),
-  status: z.enum(['active', 'read-only']).optional(),
+  status: z.enum(['active', 'read-only', 'inactive']).optional(),
   owner: z.string().min(1).max(100).optional(), // free-text owner name filter
   search: z.string().min(1).max(200).optional(),
   tagId: z.string().uuid().optional(),
@@ -711,6 +711,94 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         count: imported.length,
         failed,
       });
+    },
+  );
+
+  // ─── POST /chats/refresh-statuses ───
+  // Re-checks every imported chat against its messenger and flips it between
+  // `active` and `inactive`, so broadcasts are not aimed at chats the connected
+  // account can no longer reach (e.g. chats left over from a previous Teams
+  // login). A chat is reachable iff the adapter's listChats() still returns it —
+  // the same signal the import wizard trusts. The manual `read-only` status is a
+  // user decision and is never touched.
+  //
+  // Runs synchronously: the slowest messenger is Teams (a browser scan,
+  // ~10-60 s), which is acceptable for a button with a spinner.
+
+  fastify.post(
+    '/chats/refresh-statuses',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const orgChats = await prisma.chat.findMany({
+        where: { organizationId, deletedAt: null },
+        select: { messenger: true },
+        distinct: ['messenger'],
+      });
+
+      const results: Record<string, { checked: number; activated: number; deactivated: number }> = {};
+      const errors: Record<string, string> = {};
+
+      for (const { messenger } of orgChats) {
+        const integration = await prisma.integration.findFirst({
+          where: { messenger, organizationId, status: 'connected' },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (!integration) {
+          errors[messenger] = 'Not connected — statuses left as they are';
+          continue;
+        }
+
+        let reachable: Set<string>;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let adapter: any;
+        try {
+          const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+          adapter = await createAdapter(messenger, creds);
+          await adapter.connect();
+          const chats: Array<{ externalChatId: string }> = await adapter.listChats();
+          reachable = new Set(chats.map((c) => c.externalChatId));
+        } catch (err) {
+          // A failed check proves nothing about the chats — leave them alone.
+          errors[messenger] = err instanceof Error ? err.message : 'Failed to list chats';
+          continue;
+        } finally {
+          try { await adapter?.disconnect(); } catch { /* ignore */ }
+        }
+
+        const chats = await prisma.chat.findMany({
+          where: { organizationId, messenger, deletedAt: null },
+          select: { id: true, externalChatId: true, status: true },
+        });
+
+        const activateIds = chats
+          .filter((c) => c.status === 'inactive' && reachable.has(c.externalChatId))
+          .map((c) => c.id);
+        const deactivateIds = chats
+          .filter((c) => c.status === 'active' && !reachable.has(c.externalChatId))
+          .map((c) => c.id);
+
+        if (activateIds.length > 0) {
+          await prisma.chat.updateMany({ where: { id: { in: activateIds } }, data: { status: 'active' } });
+        }
+        if (deactivateIds.length > 0) {
+          await prisma.chat.updateMany({ where: { id: { in: deactivateIds } }, data: { status: 'inactive' } });
+        }
+
+        results[messenger] = {
+          checked: chats.length,
+          activated: activateIds.length,
+          deactivated: deactivateIds.length,
+        };
+      }
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      return reply.send({ results, errors });
     },
   );
 
