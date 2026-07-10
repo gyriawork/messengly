@@ -15,6 +15,13 @@ import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
 import { teamsAgent, TeamsAgentError } from '../lib/teams-client.js';
 
+/**
+ * Consecutive failures before we stop trying. Mirrors meetsbroadcast's circuit
+ * breaker: once the browser is in a bad way, every further send is a slow,
+ * doomed navigation, and a long broadcast would grind through hundreds of them.
+ */
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+
 /** Broadcast attachments may carry app-relative URLs; the agent needs absolute ones. */
 function absoluteUrl(url: string): string {
   if (url.startsWith('http')) return url;
@@ -29,6 +36,14 @@ function toChatType(type: string): string {
 
 export class TeamsAdapter implements MessengerAdapter {
   private status: 'connected' | 'disconnected' | 'session_expired' = 'disconnected';
+
+  /**
+   * One adapter instance serves one messenger batch, so this state spans the whole
+   * run of Teams chats in a broadcast — which is exactly what a circuit breaker
+   * and a halt flag need.
+   */
+  private consecutiveFailures = 0;
+  private halted = false;
 
   /**
    * The sidecar owns the browser, so "connecting" means asserting that its Teams
@@ -74,15 +89,19 @@ export class TeamsAdapter implements MessengerAdapter {
   }
 
   /**
-   * Send one message.
+   * Send one message, classifying every failure the way meetsbroadcast's
+   * orchestrator does — because the wrong classification is expensive here:
    *
-   * The agent reports three outcomes and they must not be collapsed:
-   *   - delivered
-   *   - never left the compose box  → safe to retry
-   *   - possibly delivered, unconfirmed → retrying would duplicate it in a real chat
+   *   session expired   → halt. Every further send would drive a doomed browser
+   *                       navigation, so a 200-chat broadcast becomes 200 slow
+   *                       failures against a dead session.
+   *   chat not found    → skip. The chat is gone; that is not a delivery failure.
+   *   attachment failed → no retry. Re-running the same UI fails identically.
+   *   unverified        → no retry. The message may already be in the chat; a
+   *                       retry would put a second copy there.
+   *   anything else     → retry.
    *
-   * The last case is surfaced by prefixing the error with `unverified:`, which lands
-   * in `BroadcastChat.errorReason` and tells the UI to withhold Retry.
+   * Five consecutive failures trip the circuit breaker and halt the batch.
    */
   async sendMessage(
     externalChatId: string,
@@ -92,6 +111,10 @@ export class TeamsAdapter implements MessengerAdapter {
       attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>;
     },
   ): Promise<{ externalMessageId: string }> {
+    if (this.halted) {
+      throw new MessengerError('teams', null, 'Teams sending halted for this broadcast', 'halt');
+    }
+
     let result;
     try {
       result = await teamsAgent.sendMessage({
@@ -104,13 +127,75 @@ export class TeamsAdapter implements MessengerAdapter {
         })),
       });
     } catch (err) {
-      throw this.wrap(err);
+      throw this.classifyAgentError(err);
     }
 
-    if (result.ok) return { externalMessageId: result.messageId };
+    if (result.ok) {
+      this.consecutiveFailures = 0;
+      return { externalMessageId: result.messageId };
+    }
 
-    const prefix = result.retriable ? '' : 'unverified: ';
-    throw new MessengerError('teams', null, `${prefix}${result.reason}`);
+    if (!result.retriable) {
+      // The compose box emptied, so the message probably went out — we just could
+      // not re-match the bubble. Not a failure of the browser, so the breaker
+      // stays where it is.
+      throw new MessengerError('teams', null, `unverified: ${result.reason}`, 'no_retry');
+    }
+
+    // The message genuinely never left. Retriable, and it counts as a failure.
+    throw this.recordFailure(new MessengerError('teams', null, result.reason, 'retry'));
+  }
+
+  /**
+   * Turn an agent HTTP error into a policy. Errors that say nothing about the
+   * browser's health (a missing chat) do not move the breaker.
+   */
+  private classifyAgentError(err: unknown): MessengerError {
+    if (!(err instanceof TeamsAgentError)) {
+      return this.recordFailure(
+        new MessengerError('teams', err, (err as Error)?.message ?? 'Teams adapter error', 'retry'),
+      );
+    }
+
+    switch (err.code) {
+      case 'SESSION_EXPIRED':
+        this.status = 'session_expired';
+        this.halted = true;
+        return new MessengerError(
+          'teams',
+          err,
+          'Teams session expired — log in again from Settings → Integrations',
+          'halt',
+        );
+
+      case 'CHAT_NOT_FOUND':
+        this.consecutiveFailures = 0; // the browser is fine; this chat is not
+        return new MessengerError('teams', err, err.message, 'skip');
+
+      case 'ATTACHMENT_UNSUPPORTED':
+      case 'ATTACHMENT_DOWNLOAD_FAILED':
+        return this.recordFailure(new MessengerError('teams', err, `attachment: ${err.message}`, 'no_retry'));
+
+      default:
+        return this.recordFailure(new MessengerError('teams', err, err.message, 'retry'));
+    }
+  }
+
+  /**
+   * Count a failure against the circuit breaker, upgrading the policy to `halt`
+   * once the browser has failed five times in a row.
+   */
+  private recordFailure(error: MessengerError): MessengerError {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures < CIRCUIT_BREAKER_THRESHOLD) return error;
+
+    this.halted = true;
+    return new MessengerError(
+      'teams',
+      error.originalError,
+      `${CIRCUIT_BREAKER_THRESHOLD} consecutive Teams failures — halting. Last error: ${error.message}`,
+      'halt',
+    );
   }
 
   /** Teams' web UI offers no reliable automation for editing a sent message. */

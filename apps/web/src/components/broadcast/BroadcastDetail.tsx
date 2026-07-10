@@ -133,7 +133,12 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   // to a flat list so the breakdown and failed-recipients table work.
   const allChats = normalizeChats(broadcast);
   const messengerBreakdown = getMessengerBreakdown(allChats);
-  const failedChats = allChats.filter((c) => c.status === 'failed');
+  // `retry_exhausted` is a failure the operator may not retry — show it alongside
+  // the plain failures rather than hiding it.
+  const failedChats = allChats.filter(
+    (c) => c.status === 'failed' || c.status === 'retry_exhausted',
+  );
+  const skippedChats = allChats.filter((c) => c.status === 'skipped');
 
   // Build status timeline
   const timeline = buildTimeline(broadcast);
@@ -361,6 +366,57 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
                       </td>
                       <td className="px-4 py-2 text-xs text-red-500">
                         {chat.error || 'Unknown error'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/*
+        Skipped recipients — never attempted, so not failures. Either the chat had
+        gone missing, or the messenger halted the batch (expired session, or five
+        consecutive failures) and everything after it was left alone.
+      */}
+      {skippedChats.length > 0 && (
+        <div className="mb-6 rounded-lg bg-white p-5 shadow-xs">
+          <p className="mb-3 text-sm font-semibold text-slate-900">
+            Skipped Recipients ({skippedChats.length})
+          </p>
+          <p className="mb-3 text-xs text-slate-500">
+            These were never attempted. Nothing was sent to them.
+          </p>
+          <div className="overflow-hidden rounded-lg border border-slate-200">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-4 py-2 text-xs font-medium text-slate-500">Chat</th>
+                  <th className="px-4 py-2 text-xs font-medium text-slate-500">Messenger</th>
+                  <th className="px-4 py-2 text-xs font-medium text-slate-500">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {skippedChats.map((chat) => {
+                  const meta = messengerMeta[chat.messenger];
+                  return (
+                    <tr key={chat.chatId} className="border-b border-slate-100 last:border-b-0">
+                      <td className="px-4 py-2 font-medium text-slate-700">{chat.chatName}</td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={cn(
+                            'rounded-full px-2 py-0.5 text-xs font-medium',
+                            meta?.bgClass,
+                            meta?.textClass,
+                          )}
+                        >
+                          {meta?.label || chat.messenger}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-amber-600">
+                        {chat.error || 'Skipped'}
                       </td>
                     </tr>
                   );

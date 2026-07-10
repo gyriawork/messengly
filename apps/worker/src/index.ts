@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
+import { MessengerError, type SendFailurePolicy } from './integrations/base.js';
 import { ensureChat } from './services/chat-service.js';
 import { emojify } from 'node-emoji';
 type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
@@ -201,9 +202,9 @@ async function sendMessengerBatch(
   antibanConfig: AntibanConfig,
   isRetry: boolean,
   attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>,
-): Promise<{ sent: number; failed: number }> {
+): Promise<{ sent: number; failed: number; skipped: number }> {
   const messenger = messengerChats[0]?.chat.messenger;
-  if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0 };
+  if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0, skipped: 0 };
 
   // Convert Slack-style :emoji: shortcodes to real Unicode emoji so they render
   // correctly in every messenger (Telegram shows the raw code otherwise).
@@ -239,11 +240,12 @@ async function sendMessengerBatch(
         errorReason: `Adapter connection failed: ${err instanceof Error ? err.message : String(err)}`,
       },
     });
-    return { sent: 0, failed: messengerChats.length };
+    return { sent: 0, failed: messengerChats.length, skipped: 0 };
   }
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   let hourlyCount = 0;
   let dailyCount = 0;
   let batchCount = 0;
@@ -301,27 +303,54 @@ async function sendMessengerBatch(
       dailyCount++;
     } catch (err) {
       const errorReason = err instanceof Error ? err.message : String(err);
-      log.warn(`Failed to send to chat ${bc.chatId}`, { broadcastId, messenger, error: errorReason });
+      // Adapters that say nothing get `retry`, which is exactly what they got
+      // before this existed.
+      const policy: SendFailurePolicy = err instanceof MessengerError ? err.policy : 'retry';
+      log.warn(`Failed to send to chat ${bc.chatId}`, { broadcastId, messenger, policy, error: errorReason });
 
-      await prisma.broadcastChat.update({
-        where: { id: bc.id },
-        data: {
-          status: 'failed',
-          errorReason,
-          retryCount: bc.retryCount + (isRetry ? 1 : 0),
-        },
-      });
+      if (policy === 'skip') {
+        // The chat is the problem, not the delivery. Not counted as a failure.
+        await prisma.broadcastChat.update({
+          where: { id: bc.id },
+          data: { status: 'skipped', errorReason },
+        });
+        skipped++;
+      } else {
+        await prisma.broadcastChat.update({
+          where: { id: bc.id },
+          data: {
+            status: 'failed',
+            errorReason,
+            retryCount: bc.retryCount + (isRetry ? 1 : 0),
+          },
+        });
+        failed++;
+      }
 
-      failed++;
       batchCount++;
       hourlyCount++;
       dailyCount++;
+
+      if (policy === 'halt') {
+        // Continuing would drive the same broken browser through every remaining
+        // chat. Stop this messenger's batch; other messengers are untouched.
+        const remainingIds = messengerChats.slice(i + 1).map((c) => c.id);
+        if (remainingIds.length > 0) {
+          await prisma.broadcastChat.updateMany({
+            where: { id: { in: remainingIds } },
+            data: { status: 'skipped', errorReason: `Skipped — ${messenger} halted: ${errorReason}` },
+          });
+          skipped += remainingIds.length;
+        }
+        log.error(`Halting ${messenger} batch`, { broadcastId, error: errorReason, skipped: remainingIds.length });
+        break;
+      }
     }
 
     // Emit progress periodically (every 10 messages)
     if ((sent + failed) % 10 === 0) {
       emitBroadcastStatus(organizationId, broadcastId, 'sending', {
-        progress: { sent, failed, remaining: messengerChats.length - sent - failed },
+        progress: { sent, failed, remaining: messengerChats.length - sent - failed - skipped },
       });
     }
   }
@@ -333,7 +362,7 @@ async function sendMessengerBatch(
     // Non-critical
   }
 
-  return { sent, failed };
+  return { sent, failed, skipped };
 }
 
 /**
@@ -350,6 +379,7 @@ async function finalizeBroadcast(broadcastId: string, organizationId: string): P
   const failedCount = broadcastChats.filter((c) =>
     c.status === 'failed' || c.status === 'retry_exhausted',
   ).length;
+  const skippedCount = broadcastChats.filter((c) => c.status === 'skipped').length;
   const pendingCount = broadcastChats.filter((c) =>
     c.status === 'pending' || c.status === 'retrying',
   ).length;
@@ -365,6 +395,8 @@ async function finalizeBroadcast(broadcastId: string, organizationId: string): P
   } else if (sentCount === 0) {
     status = 'failed';
   } else {
+    // Skipped chats (missing chat, halted batch) count as "not delivered", so a
+    // broadcast that skipped some but delivered others is partially failed.
     status = 'partially_failed';
   }
 
@@ -379,7 +411,7 @@ async function finalizeBroadcast(broadcastId: string, organizationId: string): P
 
   emitBroadcastStatus(organizationId, broadcastId, status, {
     deliveryRate,
-    stats: { total, sent: sentCount, failed: failedCount, pending: pendingCount },
+    stats: { total, sent: sentCount, failed: failedCount, skipped: skippedCount, pending: pendingCount },
   });
 
   log.info(`Broadcast ${broadcastId} finalized`, {
@@ -388,6 +420,7 @@ async function finalizeBroadcast(broadcastId: string, organizationId: string): P
     total,
     sent: sentCount,
     failed: failedCount,
+    skipped: skippedCount,
   });
 }
 

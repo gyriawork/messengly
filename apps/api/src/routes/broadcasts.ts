@@ -8,10 +8,14 @@ import { broadcastQueue } from '../lib/queue.js';
 import { getIO } from '../websocket/index.js';
 
 /**
- * Marker the Teams adapter puts on a send whose delivery it could not confirm.
- * Such a chat must never be retried — the message may already be there.
+ * Markers an adapter puts on a failure that must never be retried.
+ *
+ * `unverified:` — the Teams agent could not confirm delivery, but the message may
+ *   well have arrived. Retrying would put a second copy in a real chat.
+ * `attachment:` — the file could not be attached (a PDF to a Teams group chat has
+ *   nowhere to go). Re-running the same flow fails identically.
  */
-const UNVERIFIED_PREFIX = 'unverified:';
+const NON_RETRIABLE_REASON_PREFIXES = ['unverified:', 'attachment:'] as const;
 
 // ─── Zod Schemas ───
 
@@ -126,20 +130,24 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         : [];
 
       // Build a map of broadcastId -> { sent, failed, pending }
-      const statsMap = new Map<string, { sent: number; failed: number; pending: number }>();
+      const statsMap = new Map<string, { sent: number; failed: number; skipped: number; pending: number }>();
       for (const row of statusCountRows) {
         if (!statsMap.has(row.broadcastId)) {
-          statsMap.set(row.broadcastId, { sent: 0, failed: 0, pending: 0 });
+          statsMap.set(row.broadcastId, { sent: 0, failed: 0, skipped: 0, pending: 0 });
         }
         const entry = statsMap.get(row.broadcastId)!;
         const count = Number(row.count);
         if (row.status === 'sent') entry.sent += count;
         if (row.status === 'failed' || row.status === 'retry_exhausted') entry.failed += count;
+        // A skipped chat was never attempted (missing chat, or the messenger halted),
+        // so it is neither delivered nor a delivery failure. Without its own bucket
+        // the counts silently stop adding up to the total.
+        if (row.status === 'skipped') entry.skipped += count;
         if (row.status === 'pending' || row.status === 'retrying') entry.pending += count;
       }
 
       const result = broadcasts.map((b) => {
-        const stats = statsMap.get(b.id) ?? { sent: 0, failed: 0, pending: 0 };
+        const stats = statsMap.get(b.id) ?? { sent: 0, failed: 0, skipped: 0, pending: 0 };
         return {
           id: b.id,
           name: b.name,
@@ -157,6 +165,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
             total: b._count.chats,
             sent: stats.sent,
             failed: stats.failed,
+            skipped: stats.skipped,
             pending: stats.pending,
           },
         };
@@ -368,6 +377,10 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       const failedCount = broadcast.chats.filter((c) =>
         c.status === 'failed' || c.status === 'retry_exhausted',
       ).length;
+      // Never attempted: the chat was missing, or the messenger halted mid-batch.
+      // Neither delivered nor failed, so it needs its own bucket for the counts
+      // to add up to the total.
+      const skippedCount = broadcast.chats.filter((c) => c.status === 'skipped').length;
       const pendingCount = broadcast.chats.filter((c) =>
         c.status === 'pending' || c.status === 'retrying',
       ).length;
@@ -389,6 +402,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           total: totalChats,
           sent: sentCount,
           failed: failedCount,
+          skipped: skippedCount,
           pending: pendingCount,
         },
         chatsByStatus,
@@ -754,15 +768,17 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return reply.status(409).send({ error: { code: 'BROADCAST_ALREADY_SENT', message: `Broadcast is already ${broadcast.status}`, statusCode: 409 } });
       }
 
-      // A send the Teams agent could not confirm may already have been delivered:
-      // the compose box emptied, but the bubble could not be re-matched in the
-      // virtualized feed. Retrying would put a second copy in a real chat, so these
-      // are terminal. The adapter marks them by prefixing the reason.
-      const unverified = await prisma.broadcastChat.updateMany({
+      // Failures the adapter marked as permanent are terminal: retrying either
+      // duplicates a message that already arrived, or repeats an identical
+      // failure. `skipped` chats are excluded automatically — they are neither
+      // `failed` nor `retry_exhausted`.
+      const nonRetriable = await prisma.broadcastChat.updateMany({
         where: {
           broadcastId: id,
           status: 'failed',
-          errorReason: { startsWith: UNVERIFIED_PREFIX },
+          OR: NON_RETRIABLE_REASON_PREFIXES.map((prefix) => ({
+            errorReason: { startsWith: prefix },
+          })),
         },
         data: { status: 'retry_exhausted' },
       });
@@ -773,10 +789,12 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         where: {
           broadcastId: id,
           status: { in: ['failed', 'retry_exhausted'] },
-          OR: [
-            { errorReason: null },
-            { NOT: { errorReason: { startsWith: UNVERIFIED_PREFIX } } },
-          ],
+          AND: NON_RETRIABLE_REASON_PREFIXES.map((prefix) => ({
+            OR: [
+              { errorReason: null },
+              { NOT: { errorReason: { startsWith: prefix } } },
+            ],
+          })),
         },
         data: { status: 'retrying', errorReason: null },
       });
@@ -787,8 +805,8 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(
           reply,
           'VALIDATION_ERROR',
-          unverified.count > 0
-            ? `No chats can be retried: ${unverified.count} may already have been delivered and would duplicate`
+          nonRetriable.count > 0
+            ? `No chats can be retried: ${nonRetriable.count} cannot be sent again without risking a duplicate or repeating the same failure`
             : 'No failed chats to retry',
           422,
         );

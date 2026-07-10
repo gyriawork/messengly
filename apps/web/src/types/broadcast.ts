@@ -28,7 +28,12 @@ export interface BroadcastChat {
   chatId: string;
   chatName: string;
   messenger: string;
-  status: 'pending' | 'sent' | 'failed';
+  /**
+   * `skipped` means the chat was never attempted — it had gone missing, or the
+   * messenger halted mid-batch (expired session, five consecutive failures).
+   * `retry_exhausted` is terminal: retrying would duplicate or repeat.
+   */
+  status: 'pending' | 'sent' | 'failed' | 'skipped' | 'retrying' | 'retry_exhausted';
   sentAt?: string;
   error?: string;
 }

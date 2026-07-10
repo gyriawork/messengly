@@ -39,11 +39,28 @@ export interface MessengerAdapter {
 }
 
 /** Typed error for messenger adapter failures. */
+/**
+ * What the broadcast worker should do when a send fails.
+ *
+ * `retry`    transient — the chat can be retried later. The default, so adapters
+ *            that say nothing keep their existing behaviour.
+ * `no_retry` permanent for this message. Retrying repeats the same failure, and
+ *            for an unverified send it would duplicate a message that may already
+ *            have arrived.
+ * `skip`     the chat itself is the problem (gone, ambiguous). Not a delivery
+ *            failure, so it does not count against the recipient's stats.
+ * `halt`     stop sending through this messenger entirely; the remaining chats in
+ *            the batch are skipped. Used for an expired session or a run of
+ *            consecutive failures, where continuing only makes things worse.
+ */
+export type SendFailurePolicy = 'retry' | 'no_retry' | 'skip' | 'halt';
+
 export class MessengerError extends Error {
   constructor(
     public messenger: string,
     public originalError: unknown,
     message?: string,
+    public policy: SendFailurePolicy = 'retry',
   ) {
     super(message ?? `${messenger} adapter error`);
     this.name = 'MessengerError';
