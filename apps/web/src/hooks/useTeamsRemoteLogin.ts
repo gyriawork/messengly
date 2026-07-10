@@ -191,11 +191,12 @@ export function useTeamsRemoteLogin() {
    */
   const click = useCallback(
     async (event: React.MouseEvent<HTMLImageElement>) => {
-      // Buffered characters belong to the field that is focused right now, not to
-      // whatever this click is about to focus.
-      await flushTyping();
-
+      // Read the geometry synchronously. React clears `currentTarget` as soon as
+      // the handler returns, and an `await` hands control back before that — so
+      // touching it afterwards throws on null and swallows the click.
       const rect = event.currentTarget.getBoundingClientRect();
+      const { clientX, clientY } = event;
+
       const scale = Math.min(rect.width / viewport.width, rect.height / viewport.height);
       if (!Number.isFinite(scale) || scale <= 0) return;
 
@@ -204,12 +205,16 @@ export function useTeamsRemoteLogin() {
       const offsetX = (rect.width - drawnWidth) / 2;
       const offsetY = (rect.height - drawnHeight) / 2;
 
-      const x = Math.round((event.clientX - rect.left - offsetX) / scale);
-      const y = Math.round((event.clientY - rect.top - offsetY) / scale);
+      const x = Math.round((clientX - rect.left - offsetX) / scale);
+      const y = Math.round((clientY - rect.top - offsetY) / scale);
 
       // A click on the letterbox bars is outside the browser — the agent would
       // reject it with OUT_OF_BOUNDS, so don't bother it.
       if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) return;
+
+      // Buffered characters belong to the field that is focused right now, not to
+      // whatever this click is about to focus — so they must go out first.
+      await flushTyping();
 
       try {
         await api.post('/api/integrations/teams/remote/click', { x, y });
@@ -225,9 +230,12 @@ export function useTeamsRemoteLogin() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       event.preventDefault();
 
+      // Read the event synchronously, before any await — see the note in `click`.
+      const key = event.key;
+
       // Printable characters accumulate and go out as one request.
-      if (event.key.length === 1) {
-        typeBuffer.current += event.key;
+      if (key.length === 1) {
+        typeBuffer.current += key;
         if (typeBuffer.current.length >= TYPE_FLUSH_MAX_CHARS) {
           await flushTyping();
           return;
@@ -237,13 +245,13 @@ export function useTeamsRemoteLogin() {
         return;
       }
 
-      if (!ALLOWED_KEYS.has(event.key)) return;
+      if (!ALLOWED_KEYS.has(key)) return;
 
       // Order matters: an Enter that overtakes the buffered text would submit an
       // empty field.
       await flushTyping();
       try {
-        await api.post('/api/integrations/teams/remote/key', { key: event.key });
+        await api.post('/api/integrations/teams/remote/key', { key });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Key press failed');
       }
