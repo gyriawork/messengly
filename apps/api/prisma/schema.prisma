@@ -256,6 +256,7 @@ model BroadcastChat {
   errorReason   String?
   retryCount    Int     @default(0)
   sentAt        DateTime?
+  updatedAt     DateTime @default(now()) @updatedAt // when the status last changed — timestamps the delivery log
 
   @@unique([broadcastId, chatId])
   @@index([status])

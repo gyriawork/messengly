@@ -127,7 +127,7 @@ export default function TemplatesPage() {
 
       {/* Template grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="rounded-xl bg-white p-5 shadow-xs">
               <div className="mb-2 flex items-start justify-between">
@@ -159,7 +159,7 @@ export default function TemplatesPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {templates.map((template) => (
             <div
               key={template.id}
@@ -197,30 +197,26 @@ export default function TemplatesPage() {
               </div>
 
               {/* Message preview */}
-              <p className="mb-3 line-clamp-3 text-sm leading-relaxed text-slate-500">
+              <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-slate-500">
                 {template.messageText}
               </p>
 
-              {/* Meta */}
-              <div className="flex flex-wrap items-center gap-3 border-t border-slate-50 pt-3">
-                <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+              {/* Meta — one line, matching the Broadcasts card */}
+              <div className="flex flex-wrap items-center gap-4 border-t border-slate-50 pt-3 text-xs text-slate-400">
+                <span className="inline-flex items-center gap-1 font-medium text-slate-600">
                   <BarChart3 className="h-3 w-3" />
                   Used {template.usageCount} times
                 </span>
-                {template.createdByName && (
-                  <span className="text-xs text-slate-400">
-                    by {template.createdByName}
-                  </span>
-                )}
+                {template.createdByName && <span>by {template.createdByName}</span>}
+                <span>
+                  Updated{' '}
+                  {new Date(template.updatedAt).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
               </div>
-              <p className="mt-1 text-[10px] text-slate-300">
-                Updated{' '}
-                {new Date(template.updatedAt).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </p>
             </div>
           ))}
         </div>

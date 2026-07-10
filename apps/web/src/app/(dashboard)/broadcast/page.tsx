@@ -56,7 +56,7 @@ const statusConfig: Record<
   failed: { label: 'Failed', className: 'bg-red-100 text-red-700' },
 };
 
-type SideView = 'none' | 'antiban' | 'analytics';
+type SideView = 'none' | 'antiban';
 
 export default function BroadcastPage() {
   const router = useRouter();
@@ -126,15 +126,8 @@ export default function BroadcastPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() =>
-                  setSideView(sideView === 'analytics' ? 'none' : 'analytics')
-                }
-                className={cn(
-                  'flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors',
-                  sideView === 'analytics'
-                    ? 'bg-accent-bg text-accent'
-                    : 'text-slate-600 hover:bg-slate-100',
-                )}
+                onClick={() => router.push('/broadcast/analytics')}
+                className="flex items-center gap-2 rounded px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
               >
                 <BarChart3 className="h-4 w-4" />
                 Analytics
@@ -151,7 +144,7 @@ export default function BroadcastPage() {
                 )}
               >
                 <Shield className="h-4 w-4" />
-                Anti-ban
+                Broadcast Settings
               </button>
               <button
                 onClick={() => router.push('/broadcast/new')}
@@ -366,11 +359,7 @@ export default function BroadcastPage() {
           <AntibanSettings />
         </div>
       )}
-      {sideView === 'analytics' && (
-        <div className="w-full shrink-0 overflow-auto border-l border-slate-200 bg-white md:w-[420px]">
-          <AnalyticsPanel />
-        </div>
-      )}
+
     </div>
     </RequireOrgContext>
   );
@@ -410,33 +399,3 @@ function EmptyState({ status }: { status: BroadcastStatus | null }) {
   );
 }
 
-function AnalyticsPanel() {
-  const router = useRouter();
-
-  return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Quick Analytics
-        </h2>
-        <button
-          onClick={() => router.push('/broadcast/analytics')}
-          className="text-sm font-medium text-accent hover:text-accent-hover"
-        >
-          View Full
-        </button>
-      </div>
-      <p className="text-sm text-slate-500">
-        Open the full analytics page for detailed broadcast performance data,
-        charts, and per-messenger breakdowns.
-      </p>
-      <button
-        onClick={() => router.push('/broadcast/analytics')}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
-      >
-        <BarChart3 className="h-4 w-4" />
-        Open Analytics
-      </button>
-    </div>
-  );
-}

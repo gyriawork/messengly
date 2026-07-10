@@ -38,6 +38,10 @@ export function useBroadcast(id: string | undefined) {
     queryKey: ['broadcast', id],
     queryFn: () => api.get<Broadcast>(`/api/broadcasts/${id}`),
     enabled: !!id,
+    // A broadcast mid-send changes every few seconds; ws events are not
+    // guaranteed to reach a long-lived tab, so poll while it is live.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'sending' ? 4000 : false,
   });
 }
 

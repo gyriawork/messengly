@@ -11,6 +11,8 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 import { useActivity } from '@/hooks/useActivity';
 import type { ActivityCategory, ActivityFilters } from '@/types/activity';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
@@ -21,7 +23,6 @@ import { History } from 'lucide-react';
 const CATEGORIES: Array<{ value: ActivityCategory | null; label: string }> = [
   { value: null, label: 'All Categories' },
   { value: 'chats', label: 'Chats' },
-  { value: 'messages', label: 'Messages' },
   { value: 'broadcast', label: 'Broadcast' },
   { value: 'templates', label: 'Templates' },
   { value: 'users', label: 'Users' },
@@ -57,6 +58,14 @@ export default function ActivityPage() {
   const [page, setPage] = useState(1);
 
   const { data, isLoading } = useActivity(filters, page);
+
+  // Actor dropdown: the org member list — a raw user-id input is unusable.
+  // GET /api/users returns a bare array.
+  const { data: usersData } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['org-users'],
+    queryFn: () => api.get('/api/users'),
+  });
+  const orgUsers = usersData ?? [];
 
   const entries = data?.data || [];
   const pagination = data?.pagination;
@@ -145,15 +154,21 @@ export default function ActivityPage() {
         {/* User filter */}
         <div className="relative">
           <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
+          <select
             value={filters.userId || ''}
             onChange={(e) =>
               handleFilterChange({ userId: e.target.value || null })
             }
-            placeholder="Filter by user ID"
-            className={cn(inputClass, 'w-44 pl-9')}
-          />
+            className={cn(inputClass, 'appearance-none w-44 pl-9 pr-8')}
+          >
+            <option value="">All users</option>
+            {orgUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         </div>
 
         {/* Clear */}

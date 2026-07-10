@@ -607,6 +607,16 @@ export default function ChatsPage() {
   const chats = data?.chats ?? [];
   const total = data?.total ?? 0;
 
+  // Reachability summary over ALL chats, independent of the filter bar.
+  const { data: allData } = useChats({ limit: 1000 });
+  const statusCounts = useMemo(() => {
+    const all = allData?.chats ?? [];
+    return {
+      active: all.filter((c) => c.status === 'active').length,
+      inactive: all.filter((c) => c.status === 'inactive').length,
+    };
+  }, [allData]);
+
   const sorted = useMemo<ChatRow[]>(() => {
     // 1. Apply chat-type filter (existing logic).
     let filtered = chats;
@@ -724,6 +734,19 @@ export default function ChatsPage() {
           <p className="text-sm text-slate-500">
             {total} chat{total !== 1 ? 's' : ''} across all messengers
           </p>
+          <div className="mt-2 flex gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-xs">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              {statusCounts.active} active
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-xs">
+              <span className="inline-flex h-2 w-2 rounded-full bg-rose-500" />
+              {statusCounts.inactive} inactive
+            </span>
+          </div>
         </div>
         {/* Importing chats from a connected account is available to every user. */}
         <div className="flex gap-2 self-start">

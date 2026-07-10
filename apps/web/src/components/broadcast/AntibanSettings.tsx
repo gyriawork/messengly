@@ -105,7 +105,7 @@ export function AntibanSettings() {
       <div className="mb-5 flex items-center gap-2">
         <Shield className="h-5 w-5 text-accent" />
         <h2 className="text-lg font-semibold text-slate-900">
-          Anti-Ban Settings
+          Broadcast Settings
         </h2>
       </div>
 
@@ -394,15 +394,7 @@ function RiskGauge({
   score: number;
   zone: 'safe' | 'moderate' | 'risky' | 'dangerous';
 }) {
-  const radius = 70;
-  const strokeWidth = 12;
-  const cx = 90;
-  const cy = 90;
-
-  // Arc from 180deg (left) to 0deg (right) = semicircle
-  const circumference = Math.PI * radius;
-  const normalizedScore = Math.min(Math.max(score, 0), 100);
-  const dashOffset = circumference - (normalizedScore / 100) * circumference;
+  const pct = Math.min(Math.max(score, 0), 100);
 
   const zoneColors: Record<string, string> = {
     safe: '#10b981',
@@ -411,91 +403,28 @@ function RiskGauge({
     dangerous: '#ef4444',
   };
 
-  const needleAngle = 180 + (normalizedScore / 100) * 180;
-  const needleRad = (needleAngle * Math.PI) / 180;
-  const needleLength = radius - 20;
-  const needleX = cx + needleLength * Math.cos(needleRad);
-  const needleY = cy + needleLength * Math.sin(needleRad);
-
   return (
-    <svg viewBox="0 0 180 100" className="h-28 w-56">
-      {/* Background arc segments */}
-      <path
-        d={describeArc(cx, cy, radius, 180, 225)}
-        fill="none"
-        stroke="#d1fae5"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-      />
-      <path
-        d={describeArc(cx, cy, radius, 225, 270)}
-        fill="none"
-        stroke="#fef3c7"
-        strokeWidth={strokeWidth}
-        strokeLinecap="butt"
-      />
-      <path
-        d={describeArc(cx, cy, radius, 270, 315)}
-        fill="none"
-        stroke="#ffedd5"
-        strokeWidth={strokeWidth}
-        strokeLinecap="butt"
-      />
-      <path
-        d={describeArc(cx, cy, radius, 315, 360)}
-        fill="none"
-        stroke="#fecaca"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-      />
-
-      {/* Needle */}
-      <line
-        x1={cx}
-        y1={cy}
-        x2={needleX}
-        y2={needleY}
-        stroke={zoneColors[zone]}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-      />
-      <circle cx={cx} cy={cy} r={4} fill={zoneColors[zone]} />
-
-      {/* Labels */}
-      <text x="18" y="96" fontSize="8" fill="#94a3b8" textAnchor="start">
-        0
-      </text>
-      <text x="162" y="96" fontSize="8" fill="#94a3b8" textAnchor="end">
-        100
-      </text>
-
-      {/* Zone icons */}
-      <text x="40" y="32" fontSize="9" fill="#10b981">
-        Safe
-      </text>
-      <text x="128" y="32" fontSize="9" fill="#ef4444" textAnchor="end">
-        Risk
-      </text>
-    </svg>
+    <div className="w-full max-w-sm px-1">
+      <div className="relative py-2">
+        <div className="h-3 w-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500 shadow-inner" />
+        {/* Marker slides along the gradient as the sliders change. */}
+        <div
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500 ease-out"
+          style={{ left: `${pct}%` }}
+        >
+          <div
+            className="h-6 w-6 rounded-full border-[3px] bg-white shadow-md"
+            style={{ borderColor: zoneColors[zone] }}
+          />
+        </div>
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] font-medium">
+        <span className="text-emerald-600">Safe</span>
+        <span className="text-amber-500">Moderate</span>
+        <span className="text-red-500">Aggressive</span>
+      </div>
+    </div>
   );
-}
-
-function describeArc(
-  x: number,
-  y: number,
-  radius: number,
-  startAngle: number,
-  endAngle: number,
-) {
-  const startRad = (startAngle * Math.PI) / 180;
-  const endRad = (endAngle * Math.PI) / 180;
-  const startX = x + radius * Math.cos(startRad);
-  const startY = y + radius * Math.sin(startRad);
-  const endX = x + radius * Math.cos(endRad);
-  const endY = y + radius * Math.sin(endRad);
-  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
-
-  return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
 }
 
 /* ---------- Local risk computation ---------- */

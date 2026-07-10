@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  ChevronDown,
   RotateCcw,
   Copy,
   Trash2,
@@ -50,6 +52,12 @@ const messengerMeta: Record<
     bgClass: 'bg-messenger-gm-bg',
     textClass: 'text-messenger-gm-text',
     barColor: 'bg-[#a32d2d]',
+  },
+  teams: {
+    label: 'MS Teams',
+    bgClass: 'bg-messenger-mt-bg',
+    textClass: 'text-messenger-mt-text',
+    barColor: 'bg-[#4B53BC]',
   },
 };
 
@@ -278,6 +286,8 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
         )}
       </div>
 
+      <DeliveryLog chats={allChats} isLive={broadcast.status === 'sending'} />
+
       {/* Per-messenger breakdown */}
       {messengerBreakdown.length > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-3">
@@ -488,6 +498,105 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
 
 // The broadcast detail endpoint returns recipients grouped by status under
 // `chatsByStatus`; older shapes used a flat `chats` array. Normalize both to a
+/**
+ * Collapsible per-recipient delivery log. Every status change is a line with
+ * its timestamp; while the broadcast is live the page polls, so lines appear
+ * as the worker moves through the queue.
+ */
+const LOG_STATUS: Record<string, { label: string; className: string }> = {
+  sent: { label: 'sent', className: 'text-emerald-600' },
+  failed: { label: 'failed', className: 'text-red-500' },
+  retry_exhausted: { label: 'failed', className: 'text-red-500' },
+  skipped: { label: 'skipped', className: 'text-amber-600' },
+  retrying: { label: 'retrying', className: 'text-blue-500' },
+  sending: { label: 'sending', className: 'text-blue-500' },
+};
+
+function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolean }) {
+  const [open, setOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const entries = chats
+    .filter((c) => c.status !== 'pending')
+    .map((c) => ({ ...c, ts: c.sentAt ?? c.updatedAt ?? null }))
+    .sort((a, b) => new Date(a.ts ?? 0).getTime() - new Date(b.ts ?? 0).getTime());
+  const pending = chats.length - entries.length;
+
+  // Keep the newest lines in view while the send is running.
+  useEffect(() => {
+    if (open && isLive && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [open, isLive, entries.length]);
+
+  return (
+    <div className="mb-6 rounded-lg bg-white shadow-xs">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between p-5 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          Logs
+          {isLive && (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-2 text-xs text-slate-400">
+          {entries.length} event{entries.length !== 1 ? 's' : ''}
+          {pending > 0 && ` · ${pending} in queue`}
+          <ChevronDown
+            className={cn('h-4 w-4 transition-transform duration-200', open && 'rotate-180')}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <div
+          ref={scrollRef}
+          className="max-h-80 overflow-y-auto border-t border-slate-100 px-5 py-3"
+        >
+          {entries.length === 0 ? (
+            <p className="py-4 text-center text-xs text-slate-400">
+              Nothing has happened yet — recipients are waiting in the queue.
+            </p>
+          ) : (
+            <div className="space-y-1 font-mono text-xs leading-relaxed">
+              {entries.map((c) => {
+                const logStatus = LOG_STATUS[c.status] ?? { label: c.status, className: 'text-slate-500' };
+                const meta = messengerMeta[c.messenger];
+                return (
+                  <div key={c.chatId} className="flex items-baseline gap-2">
+                    <span className="shrink-0 tabular-nums text-slate-400">
+                      {c.ts
+                        ? new Date(c.ts).toLocaleTimeString('en-GB', { hour12: false })
+                        : '--:--:--'}
+                    </span>
+                    <span className={cn('w-16 shrink-0 font-semibold', logStatus.className)}>
+                      {logStatus.label}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                      {c.chatName}
+                      <span className="ml-1.5 text-slate-400">{meta?.label ?? c.messenger}</span>
+                    </span>
+                    {c.error && (
+                      <span className="min-w-0 max-w-[45%] truncate text-slate-400" title={c.error}>
+                        {c.error}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // flat BroadcastChat[] so the UI can render failures and per-messenger stats.
 function normalizeChats(broadcast: Broadcast): BroadcastChat[] {
   if (broadcast.chats && broadcast.chats.length > 0) return broadcast.chats;
@@ -499,6 +608,8 @@ function normalizeChats(broadcast: Broadcast): BroadcastChat[] {
           chatId: string;
           status: string;
           errorReason?: string | null;
+          sentAt?: string | null;
+          updatedAt?: string | null;
           chat?: { name?: string; messenger?: string };
         }>
       >;
@@ -514,6 +625,8 @@ function normalizeChats(broadcast: Broadcast): BroadcastChat[] {
         messenger: item.chat?.messenger ?? 'telegram',
         status: item.status as BroadcastChat['status'],
         error: item.errorReason ?? undefined,
+        sentAt: item.sentAt ?? null,
+        updatedAt: item.updatedAt ?? null,
       });
     }
   }
