@@ -381,7 +381,7 @@ export function BroadcastWizard() {
       <div className="rounded-lg bg-white p-6 shadow-xs">
         {/* Step 1: Compose */}
         {step === 0 && (
-          <div className="space-y-5">
+          <div className="space-y-5 motion-safe:animate-step-in">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Broadcast Name
@@ -527,7 +527,7 @@ export function BroadcastWizard() {
 
         {/* Step 2: Recipients */}
         {step === 1 && (
-          <div className="space-y-4">
+          <div className="space-y-4 motion-safe:animate-step-in">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">
                 Select Recipients
@@ -728,7 +728,7 @@ export function BroadcastWizard() {
 
         {/* Step 3: Schedule */}
         {step === 2 && (
-          <div className="space-y-6">
+          <div className="space-y-6 motion-safe:animate-step-in">
             <h3 className="text-sm font-semibold text-slate-900">
               When to send?
             </h3>
@@ -831,7 +831,7 @@ export function BroadcastWizard() {
 
         {/* Step 4: Review */}
         {step === 3 && (
-          <div className="space-y-6">
+          <div className="space-y-6 motion-safe:animate-step-in">
             <h3 className="text-sm font-semibold text-slate-900">
               Review Your Broadcast
             </h3>

@@ -15,6 +15,7 @@ import { formatDate } from '@/lib/dates';
 import { useDashboardStats } from '@/hooks/useDashboard';
 import type { ActivityCategory } from '@/types/activity';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
+import { CountUp } from '@/components/ui/CountUp';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { Skeleton } from '@/components/ui/Skeleton';
 
@@ -153,25 +154,29 @@ export default function DashboardPage() {
           iconBg="bg-blue-50"
           label="Total Chats"
           value={stats?.totalChats ?? 0}
+          index={0}
         />
         <MetricCard
           icon={<Plug className="h-5 w-5 text-emerald-500" />}
           iconBg="bg-emerald-50"
           label="Active Integrations"
           value={stats?.activeIntegrations ?? 0}
+          index={1}
         />
         <MetricCard
           icon={<Send className="h-5 w-5 text-accent" />}
           iconBg="bg-accent-bg"
           label="Messages Sent"
-          value={formatNumber(stats?.messagesSent ?? 0)}
+          value={stats?.messagesSent ?? 0}
           subtitle="This month"
+          index={2}
         />
         <MetricCard
           icon={<TrendingUp className="h-5 w-5 text-purple-500" />}
           iconBg="bg-purple-50"
           label="Delivery Rate"
           value={`${Math.round(stats?.deliveryRate ?? 0)}%`}
+          index={3}
         />
       </div>
 
@@ -183,14 +188,14 @@ export default function DashboardPage() {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => router.push('/broadcast/new')}
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
             New Broadcast
           </button>
 <button
             onClick={() => router.push('/templates')}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-xs transition-all hover:bg-slate-50 hover:-translate-y-px"
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-xs transition-all hover:bg-slate-50 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <FileText className="h-4 w-4" />
             Manage Templates
@@ -318,19 +323,26 @@ function MetricCard({
   label,
   value,
   subtitle,
+  index = 0,
 }: {
   icon: React.ReactNode;
   iconBg: string;
   label: string;
   value: string | number;
   subtitle?: string;
+  index?: number;
 }) {
   return (
-    <div className="rounded-xl bg-white p-5 shadow-xs">
+    <div
+      className="rounded-xl bg-white p-5 shadow-xs motion-safe:animate-fade-in-up"
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {typeof value === 'number' ? <CountUp value={value} /> : value}
+          </p>
           {subtitle && (
             <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>
           )}
@@ -348,11 +360,6 @@ function MetricCard({
   );
 }
 
-function formatNumber(num: number): string {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return String(num);
-}
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);

@@ -319,8 +319,8 @@ export function ConnectAndImportWizard({
 
   // ── Render ──
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-lg md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-lg md:rounded-xl">
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -386,6 +386,8 @@ export function ConnectAndImportWizard({
           </div>
         )}
 
+        {/* Each step body remounts on step change; key restarts the slide-in. */}
+        <div key={step} className="motion-safe:animate-step-in">
         {/* ── Step: Credentials ── */}
         {step === 'credentials' && renderCredentialsForm?.(handleCredentialsSuccess)}
 
@@ -426,7 +428,7 @@ export function ConnectAndImportWizard({
               <button
                 onClick={handleImport}
                 disabled={selected.size === 0}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
                 Import selected ({selected.size})
@@ -469,7 +471,7 @@ export function ConnectAndImportWizard({
                   onClose();
                   window.location.href = '/chats';
                 }}
-                className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+                className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
               >
                 Go to Chats
                 <ArrowRight className="h-4 w-4" />
@@ -501,6 +503,7 @@ export function ConnectAndImportWizard({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

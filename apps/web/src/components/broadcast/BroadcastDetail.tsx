@@ -258,7 +258,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
             className={cn(
               'h-full rounded-full transition-all duration-500',
               broadcast.status === 'sending'
-                ? 'bg-amber-400'
+                ? 'bg-amber-400 bg-[linear-gradient(45deg,rgba(255,255,255,.3)_25%,transparent_25%,transparent_50%,rgba(255,255,255,.3)_50%,rgba(255,255,255,.3)_75%,transparent_75%)] bg-[length:1rem_1rem] motion-safe:animate-stripe-slide'
                 : failed > 0
                   ? 'bg-gradient-to-r from-emerald-500 to-emerald-500'
                   : 'bg-emerald-500',
@@ -547,10 +547,16 @@ function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolea
         </span>
       </button>
 
-      {open && (
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+      >
         <div
           ref={scrollRef}
-          className="max-h-80 overflow-y-auto border-t border-slate-100 px-5 py-3"
+          className={cn(
+            'max-h-80 overflow-y-auto border-slate-100 px-5',
+            open ? 'min-h-0 border-t py-3' : 'min-h-0 overflow-hidden border-t-0 py-0',
+          )}
         >
           {entries.length === 0 ? (
             <p className="py-4 text-center text-xs text-slate-400">
@@ -562,7 +568,7 @@ function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolea
                 const logStatus = LOG_STATUS[c.status] ?? { label: c.status, className: 'text-slate-500' };
                 const meta = messengerMeta[c.messenger];
                 return (
-                  <div key={c.chatId} className="flex items-baseline gap-2">
+                  <div key={c.chatId} className="flex items-baseline gap-2 motion-safe:animate-fade-in-up">
                     <span className="shrink-0 tabular-nums text-slate-500">
                       {c.ts
                         ? new Date(c.ts).toLocaleTimeString('en-GB', { hour12: false })
@@ -586,7 +592,7 @@ function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolea
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

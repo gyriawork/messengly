@@ -12,11 +12,11 @@ type Size = 'sm' | 'md';
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-accent text-white shadow-accent-sm hover:bg-accent-hover hover:-translate-y-px',
+    'bg-accent text-white shadow-accent-sm hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]',
   secondary:
-    'border-[1.5px] border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-px',
+    'border-[1.5px] border-slate-200 text-slate-700 hover:bg-slate-50 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]',
   danger:
-    'border-[1.5px] border-red-200 text-red-600 hover:bg-red-50 hover:-translate-y-px',
+    'border-[1.5px] border-red-200 text-red-600 hover:bg-red-50 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]',
   ghost: 'text-slate-600 hover:bg-slate-100',
 };
 

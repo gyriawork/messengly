@@ -369,7 +369,7 @@ function TelegramConnectForm({
       <button
         type="submit"
         disabled={connectSessionMutation.isPending}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] hover:bg-accent-hover disabled:opacity-50"
       >
         {connectSessionMutation.isPending ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -446,7 +446,7 @@ function SlackConnectForm({
           <button
             type="button"
             onClick={handleOAuthConnect}
-            className="flex w-full items-center justify-center gap-2 rounded bg-[#4A154B] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3a1139] hover:-translate-y-px"
+            className="flex w-full items-center justify-center gap-2 rounded bg-[#4A154B] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3a1139] hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <ExternalLink className="h-4 w-4" />
             Connect with Slack
@@ -500,7 +500,7 @@ function SlackConnectForm({
           <button
             type="submit"
             disabled={isPending}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
           >
             {isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -540,7 +540,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={startPairing}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <Plug className="h-4 w-4" />
             Start QR Pairing
@@ -688,7 +688,7 @@ function GmailConnectForm({}: {
       <button
         type="button"
         onClick={handleOAuthConnect}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3367D6] hover:-translate-y-px"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3367D6] hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
       >
         <ExternalLink className="h-4 w-4" />
         Connect with Google
@@ -726,10 +726,10 @@ function ConnectModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
       <div
         className={cn(
-          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:rounded-xl',
+          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:rounded-xl',
           // Teams renders a live 1600×900 remote browser the operator clicks around in.
           messenger.key === 'teams' ? 'md:max-w-6xl' : 'md:max-w-md',
         )}
@@ -822,8 +822,8 @@ function IntegrationSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-lg md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-lg md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <MessengerIcon messenger={messenger.key} size={40} />
@@ -876,7 +876,7 @@ function IntegrationSettingsModal({
           <button
             onClick={handleSave}
             disabled={updateSettingsMutation.isPending}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
           >
             {updateSettingsMutation.isPending && (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -962,7 +962,7 @@ function IntegrationCard({
           {status === 'disconnected' ? (
             <button
               onClick={onConnect}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
             >
               <Plug className="h-4 w-4" />
               Connect
@@ -973,7 +973,7 @@ function IntegrationCard({
                 onClick={handleReconnect}
                 disabled={reconnectMutation.isPending}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg border-[1.5px] px-3 py-2 text-sm font-medium transition-all hover:-translate-y-px',
+                  'flex items-center gap-2 rounded-lg border-[1.5px] px-3 py-2 text-sm font-medium transition-all hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]',
                   needsAttention
                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                     : 'border-slate-200 text-slate-700 hover:bg-slate-50',
@@ -988,7 +988,7 @@ function IntegrationCard({
               </button>
               <button
                 onClick={onSettings}
-                className="flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
                 Settings
@@ -996,7 +996,7 @@ function IntegrationCard({
               <button
                 onClick={handleDisconnect}
                 disabled={disconnectMutation.isPending}
-                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] hover:bg-red-50"
               >
                 {disconnectMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1139,9 +1139,12 @@ function FaqSection() {
                 </svg>
               </button>
 
-              {/* Accordion content */}
-              {isOpen && (
-                <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+              {/* Accordion content — grid-rows animates open/close cheaply */}
+              <div
+                className="grid transition-[grid-template-rows] duration-200 ease-out"
+                style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
+              >
+                <div className={cn('min-h-0 overflow-hidden px-5', isOpen ? 'border-t border-slate-100 pb-5 pt-4' : '')}>
                   <ol className="space-y-3">
                     {item.steps.map((step, idx) => (
                       <li key={idx} className="flex gap-3">
@@ -1177,7 +1180,7 @@ function FaqSection() {
                     ))}
                   </ol>
                 </div>
-              )}
+              </div>
             </div>
           );
         })}
@@ -1262,14 +1265,15 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
         )}
 
         <div className="space-y-3">
-          {visibleMessengers.map((m) => (
+          {visibleMessengers.map((m, i) => (
+            <div key={m.key} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
             <IntegrationCard
-              key={m.key}
               info={m}
               integration={integrationsByMessenger[m.key]}
               onConnect={() => setConnectingMessenger(m)}
               onSettings={() => setSettingsMessenger(m)}
             />
+            </div>
           ))}
         </div>
       </div>

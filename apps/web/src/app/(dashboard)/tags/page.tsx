@@ -95,8 +95,8 @@ function TagModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-sm md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-sm md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
             {mode === 'create' ? 'New Tag' : 'Edit Tag'}
@@ -161,7 +161,7 @@ function TagModal({
             <button
               type="submit"
               disabled={isPending || !name.trim()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === 'create' ? 'Create Tag' : 'Save Changes'}
@@ -187,8 +187,8 @@ function DeleteConfirm({
   isPending: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-sm md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-sm md:rounded-xl">
         <h3 className="text-lg font-semibold text-slate-900">Delete Tag</h3>
         <p className="mt-2 text-sm text-slate-500">
           Are you sure you want to delete <span className="font-medium text-slate-700">&quot;{tagName}&quot;</span>?
@@ -299,7 +299,7 @@ export default function TagsPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <Plus className="h-4 w-4" />
           New Tag
@@ -325,7 +325,7 @@ export default function TagsPage() {
           action={
             <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
               Create first tag
@@ -334,13 +334,14 @@ export default function TagsPage() {
         />
       ) : (
         <div className="space-y-3">
-          {tags.map((tag) => (
+          {tags.map((tag, i) => (
+            <div key={tag.id} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
             <TagCard
-              key={tag.id}
               tag={tag}
               onEdit={() => setEditingTag(tag)}
               onDelete={() => setDeletingTag({ id: tag.id, name: tag.name })}
             />
+            </div>
           ))}
         </div>
       )}

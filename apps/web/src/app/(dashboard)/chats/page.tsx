@@ -751,7 +751,7 @@ export default function ChatsPage() {
           aria-checked={compactView}
           onClick={toggleCompactView}
           title="Compact view: denser rows, no avatars"
-          className="group inline-flex items-center gap-2.5 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px"
+          className="group inline-flex items-center gap-2.5 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <span
             className={cn(
@@ -774,14 +774,14 @@ export default function ChatsPage() {
           onClick={handleRefreshStatuses}
           disabled={refreshStatuses.isPending}
           title="Re-check every chat against its messenger and mark unreachable ones inactive"
-          className="inline-flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-60"
         >
           <RefreshCw className={cn('h-4 w-4', refreshStatuses.isPending && 'animate-spin')} />
           {refreshStatuses.isPending ? 'Updating…' : 'Update chats'}
         </button>
         <button
           onClick={() => setShowImport(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <Download className="h-4 w-4" />
           Import chats
@@ -1044,7 +1044,7 @@ export default function ChatsPage() {
               isSuperadmin ? (
                 <a
                   href="/settings"
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
                 >
                   <Plus className="h-4 w-4" />
                   Connect messenger

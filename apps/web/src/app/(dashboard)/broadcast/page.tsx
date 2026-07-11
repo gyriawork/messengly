@@ -230,7 +230,7 @@ export default function BroadcastPage() {
             )
           ) : (
             <div className="space-y-3">
-              {broadcasts.map((broadcast) => {
+              {broadcasts.map((broadcast, i) => {
                 const config = statusConfig[broadcast.status];
                 return (
                   <div
@@ -242,7 +242,8 @@ export default function BroadcastPage() {
                         router.push(`/broadcast/${broadcast.id}`);
                       }
                     }}
-                    className="group cursor-pointer rounded-lg bg-white p-4 shadow-xs transition-shadow hover:shadow-sm"
+                    className="group cursor-pointer rounded-lg bg-white p-4 shadow-xs transition-shadow hover:shadow-sm motion-safe:animate-fade-in-up"
+                    style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}
                   >
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">

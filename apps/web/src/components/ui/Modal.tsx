@@ -37,7 +37,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center"
       onClick={locked ? undefined : onClose}
     >
       <div
@@ -45,7 +45,7 @@ export function Modal({
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:rounded-xl',
+          'w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:rounded-xl',
           wide ? 'md:max-w-6xl' : 'md:max-w-md',
         )}
       >

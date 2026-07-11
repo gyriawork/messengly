@@ -161,7 +161,7 @@ export function ProfileTab() {
             <button
               type="submit"
               disabled={profileForm.formState.isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
             >
               {profileForm.formState.isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -251,7 +251,7 @@ export function ProfileTab() {
             <button
               type="submit"
               disabled={passwordForm.formState.isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
             >
               {passwordForm.formState.isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

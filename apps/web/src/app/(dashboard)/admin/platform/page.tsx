@@ -48,8 +48,10 @@ export default function PlatformSettingsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {(entries ?? []).map((entry) => (
-            <PlatformConfigCard key={entry.messenger} entry={entry} />
+          {(entries ?? []).map((entry, i) => (
+            <div key={entry.messenger} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
+              <PlatformConfigCard entry={entry} />
+            </div>
           ))}
         </div>
       )}

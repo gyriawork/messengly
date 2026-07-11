@@ -52,7 +52,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={start}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <Plug className="h-4 w-4" />
             Open Teams login

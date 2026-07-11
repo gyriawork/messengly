@@ -100,8 +100,8 @@ export function Sidebar() {
       {user?.role === 'superadmin' && <OrgSwitcher collapsed={collapsed} />}
 
       {/* Navigation */}
-      <nav className={cn('flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
-        {[
+      {(() => {
+        const navItems = [
           ...baseNavItems,
           // Broadcast / Templates / Tags are the regular user's main tools.
           ...broadcastNavItems,
@@ -112,7 +112,26 @@ export function Sidebar() {
               ]
             : []),
           { icon: Settings, href: '/settings', label: 'Settings' },
-        ].map(({ icon: Icon, href, label }) => {
+        ];
+        // Sliding active indicator: items are uniform (item height + gap-0.5),
+        // so the bar just translates to activeIndex × stride.
+        const activeIndex = navItems.findIndex(({ href }) => isActive(href));
+        const stride = collapsed ? 42 : 38;
+        const itemH = collapsed ? 40 : 36;
+        return (
+      <nav className={cn('relative flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
+        {activeIndex >= 0 && (
+          <span
+            aria-hidden
+            className="absolute left-0 w-0.5 rounded-full bg-white/90 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out"
+            style={{
+              height: 24,
+              top: (itemH - 24) / 2,
+              transform: `translateY(${activeIndex * stride}px)`,
+            }}
+          />
+        )}
+        {navItems.map(({ icon: Icon, href, label }) => {
           const active = isActive(href);
           return (
             <Link
@@ -140,6 +159,8 @@ export function Sidebar() {
           );
         })}
       </nav>
+        );
+      })()}
 
       {/* Bottom: User info + Logout */}
       <div

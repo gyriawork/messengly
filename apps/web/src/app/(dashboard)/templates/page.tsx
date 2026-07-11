@@ -70,7 +70,7 @@ export default function TemplatesPage() {
         </div>
         <button
           onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <Plus className="h-4 w-4" />
           New Template
@@ -152,7 +152,7 @@ export default function TemplatesPage() {
           action={
             <button
               onClick={() => setIsCreating(true)}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
               Create first template
@@ -161,10 +161,11 @@ export default function TemplatesPage() {
         />
       ) : (
         <div className="space-y-3">
-          {templates.map((template) => (
+          {templates.map((template, i) => (
             <div
               key={template.id}
-              className="group rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm"
+              className="group rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm motion-safe:animate-fade-in-up"
+              style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}
             >
               {/* Name */}
               <div className="mb-2 flex items-start justify-between">

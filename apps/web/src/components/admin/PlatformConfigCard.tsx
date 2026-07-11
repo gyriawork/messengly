@@ -144,7 +144,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
           <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => setEditing(true)}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
             >
               <Pencil className="h-4 w-4" />
               {entry.configured ? 'Edit Credentials' : 'Configure'}
@@ -152,7 +152,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
             {entry.configured && entry.source === 'database' && (
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] hover:bg-red-50"
               >
                 <Trash2 className="h-4 w-4" />
                 Remove

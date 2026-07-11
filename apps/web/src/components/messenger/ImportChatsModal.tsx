@@ -46,8 +46,8 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
 
   // Messenger picker
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[90dvh] rounded-t-2xl bg-white p-6 shadow-lg md:max-w-md md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[90dvh] rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h3 className="text-base font-semibold text-slate-900">Import Chats</h3>
@@ -87,7 +87,7 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
                 key={m}
                 onClick={() => setSelectedMessenger(m)}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left transition-all hover:border-accent/30 hover:bg-accent/5 hover:-translate-y-px',
+                  'flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left transition-all hover:border-accent/30 hover:bg-accent/5 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]',
                 )}
               >
                 <MessengerIcon messenger={m} size={36} />

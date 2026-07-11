@@ -92,13 +92,13 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
   });
 
   const inputClass = cn(
-    'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+    'w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
     'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-md md:rounded-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Invite Team Member</h3>
@@ -184,7 +184,7 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
           <button
             type="submit"
             disabled={inviteMutation.isPending}
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
           >
             {inviteMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -301,12 +301,13 @@ function TeamMembersSection() {
   const [showInvite, setShowInvite] = useState(false);
   const currentUser = useAuthStore((s) => s.user);
 
-  const { data, isLoading } = useQuery<{ users: OrgUser[] }>({
+  // GET /api/users returns a bare array
+  const { data, isLoading } = useQuery<OrgUser[]>({
     queryKey: ['workspace-users'],
     queryFn: () => api.get('/api/users'),
   });
 
-  const users = data?.users ?? [];
+  const users = data ?? [];
   const activeCount = users.filter((u) => u.status === 'active').length;
 
   return (
@@ -322,7 +323,7 @@ function TeamMembersSection() {
         </div>
         <button
           onClick={() => setShowInvite(true)}
-          className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <UserPlus className="h-4 w-4" />
           Invite User

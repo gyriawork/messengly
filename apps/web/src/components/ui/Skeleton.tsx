@@ -14,10 +14,12 @@ import type { HTMLAttributes } from 'react';
 export interface SkeletonProps extends HTMLAttributes<HTMLDivElement> {}
 
 export function Skeleton({ className = '', ...rest }: SkeletonProps) {
+  // A gradient sweep instead of a pulse; reduced-motion users get a static
+  // block. The sweep animates transform only, so it never triggers layout.
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse rounded bg-gray-200 ${className}`}
+      className={`relative overflow-hidden rounded bg-gray-200 after:absolute after:inset-0 after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent motion-safe:after:animate-shimmer ${className}`}
       {...rest}
     />
   );
