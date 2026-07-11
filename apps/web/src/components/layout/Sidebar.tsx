@@ -60,9 +60,10 @@ export function Sidebar() {
 
   return (
     <aside
+      style={{ fontFamily: "'Inter', 'Figtree', system-ui, sans-serif" }}
       className={cn(
         'hidden h-[100dvh] flex-col bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-4 transition-all duration-200 md:flex',
-        collapsed ? 'w-16 items-center px-2' : 'w-80 px-4',
+        collapsed ? 'w-16 items-center px-2' : 'w-[272px] px-4',
       )}
     >
       {/* Logo + Collapse toggle */}
@@ -142,9 +143,9 @@ export function Sidebar() {
                 'group relative flex items-center rounded-lg transition-all',
                 collapsed
                   ? 'h-12 w-12 justify-center'
-                  : 'gap-4 px-4 py-3 text-xl',
+                  : 'gap-4 px-4 py-3 text-xl font-bold',
                 active
-                  ? 'bg-white/15 font-medium text-white ring-4 ring-inset ring-white/20'
+                  ? 'bg-white/15 text-white ring-4 ring-inset ring-white/20'
                   : 'text-white/50 hover:bg-white/5 hover:text-white/80',
               )}
             >
