@@ -19,7 +19,9 @@ export function Skeleton({ className = '', ...rest }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"
-      className={`relative overflow-hidden rounded bg-gray-200 after:absolute after:inset-0 after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent motion-safe:after:animate-shimmer ${className}`}
+      // Invisible for the first 150ms: cache hits resolve faster than that,
+      // so skeletons only ever appear for genuinely slow loads. No flash.
+      className={`relative overflow-hidden rounded bg-gray-200 opacity-0 animate-skeleton-in after:absolute after:inset-0 after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent motion-safe:after:animate-shimmer ${className}`}
       {...rest}
     />
   );

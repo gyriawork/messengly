@@ -64,6 +64,9 @@ const config: Config = {
           from: { transform: 'translateX(-100%)' },
           to: { transform: 'translateX(100%)' },
         },
+        'skeleton-in': {
+          to: { opacity: '1' },
+        },
         'stripe-slide': {
           from: { backgroundPosition: '0 0' },
           to: { backgroundPosition: '1rem 0' },
@@ -75,7 +78,8 @@ const config: Config = {
         'modal-in': 'modal-in 0.2s ease-out both',
         'step-in': 'step-in 0.15s ease-out both',
         'scale-in': 'scale-in 0.3s ease-out both',
-        shimmer: 'shimmer 1.4s linear infinite',
+        shimmer: 'shimmer 1.2s linear infinite',
+        'skeleton-in': 'skeleton-in 0.2s ease-out 0.15s forwards',
         'stripe-slide': 'stripe-slide 0.8s linear infinite',
       },
     },
