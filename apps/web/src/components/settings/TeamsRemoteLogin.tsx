@@ -52,7 +52,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={start}
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
           >
             <Plug className="h-4 w-4" />
             Open Teams login
@@ -103,7 +103,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
             <button
               onClick={save}
               disabled={saving}
-              className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-60"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-60"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Save session
@@ -124,7 +124,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           <p className="text-center text-sm text-slate-600">{error}</p>
           <button
             onClick={start}
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
           >
             Try again
           </button>

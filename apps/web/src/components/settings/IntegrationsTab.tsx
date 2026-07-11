@@ -21,6 +21,8 @@ import { z } from 'zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { humanizeError } from '@/lib/errors';
+import { formatDateTime } from '@/lib/dates';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getAccessToken } from '@/lib/api';
 import { useSuperadminStore } from '@/stores/superadmin';
@@ -130,16 +132,7 @@ function statusConfig(status: IntegrationStatus) {
   }
 }
 
-function formatDate(iso?: string) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+
 
 // ---------- Zod schemas for connect forms ----------
 
@@ -180,7 +173,7 @@ function TelegramConnectForm({
     qrStart.mutate(undefined, {
       onSuccess: () => setQrActive(true),
       onError: (err) =>
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to start QR login'),
+        setErrorMessage(humanizeError(err, 'Failed to start QR login')),
     });
   };
 
@@ -212,7 +205,7 @@ function TelegramConnectForm({
     setTwoFaPassword('');
     qr2fa.mutate(pw, {
       onError: (err) =>
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to submit 2FA password'),
+        setErrorMessage(humanizeError(err, 'Failed to submit 2FA password')),
     });
   };
 
@@ -232,7 +225,7 @@ function TelegramConnectForm({
           onSuccess();
         },
         onError: (err) =>
-          setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired session key'),
+          setErrorMessage(humanizeError(err, 'Invalid or expired session key')),
       },
     );
   };
@@ -270,13 +263,13 @@ function TelegramConnectForm({
                 value={twoFaPassword}
                 onChange={(e) => setTwoFaPassword(e.target.value)}
                 placeholder="Your Telegram 2FA password"
-                className="w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                className="w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
               />
               <button
                 type="button"
                 onClick={submit2fa}
                 disabled={qr2fa.isPending}
-                className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
               >
                 {qr2fa.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -311,7 +304,7 @@ function TelegramConnectForm({
           <button
             type="button"
             onClick={beginQr}
-            className="flex w-full items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
           >
             Try again
           </button>
@@ -356,7 +349,7 @@ function TelegramConnectForm({
           rows={4}
           placeholder="Paste the StringSession key here"
           className={cn(
-            'w-full break-all rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-xs transition-colors',
+            'w-full break-all rounded-lg border-[1.5px] border-slate-200 px-3 py-2 font-mono text-xs transition-colors',
             'placeholder:font-sans placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
             sessionForm.formState.errors.session && 'border-red-300 focus:border-red-400 focus:ring-red-100',
           )}
@@ -376,7 +369,7 @@ function TelegramConnectForm({
       <button
         type="submit"
         disabled={connectSessionMutation.isPending}
-        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
       >
         {connectSessionMutation.isPending ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -495,7 +488,7 @@ function SlackConnectForm({
               type="password"
               placeholder="xoxb-your-bot-token"
               className={cn(
-                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono transition-colors',
+                'w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono transition-colors',
                 'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
                 errors.botToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
               )}
@@ -507,7 +500,7 @@ function SlackConnectForm({
           <button
             type="submit"
             disabled={isPending}
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
           >
             {isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -547,7 +540,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={startPairing}
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
           >
             <Plug className="h-4 w-4" />
             Start QR Pairing
@@ -597,7 +590,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
           <p className="text-sm font-medium text-emerald-700">WhatsApp connected successfully!</p>
           <button
             onClick={onClose}
-            className="mt-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+            className="mt-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
           >
             Done
           </button>
@@ -611,7 +604,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={() => { reset(); startPairing(); }}
-            className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
           >
             <RefreshCw className="h-4 w-4" />
             Try Again
@@ -725,7 +718,7 @@ function ConnectModal({
         },
         onError: (error) => {
           toast.error(
-            error instanceof Error ? error.message : 'Failed to connect',
+            humanizeError(error, 'Failed to connect'),
           );
         },
       },
@@ -819,7 +812,7 @@ function IntegrationSettingsModal({
           },
           onError: (err) =>
             toast.error(
-              err instanceof Error ? err.message : 'Failed to save settings',
+              humanizeError(err, 'Failed to save settings'),
             ),
         },
       );
@@ -863,7 +856,7 @@ function IntegrationSettingsModal({
             }}
             rows={10}
             className={cn(
-              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-sm transition-colors',
+              'w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 font-mono text-sm transition-colors',
               'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
               jsonError && 'border-red-300 focus:border-red-400 focus:ring-red-100',
             )}
@@ -876,14 +869,14 @@ function IntegrationSettingsModal({
         <div className="mt-5 flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+            className="flex-1 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={updateSettingsMutation.isPending}
-            className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
           >
             {updateSettingsMutation.isPending && (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -921,7 +914,7 @@ function IntegrationCard({
     disconnectMutation.mutate(info.key, {
       onSuccess: () => toast.success(`${info.name} disconnected`),
       onError: (err) =>
-        toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
+        toast.error(humanizeError(err, 'Failed to disconnect')),
     });
   };
 
@@ -929,7 +922,7 @@ function IntegrationCard({
     reconnectMutation.mutate(info.key, {
       onSuccess: () => toast.success(`${info.name} reconnected successfully`),
       onError: (err) =>
-        toast.error(err instanceof Error ? err.message : 'Failed to reconnect'),
+        toast.error(humanizeError(err, 'Failed to reconnect')),
     });
   };
 
@@ -955,10 +948,10 @@ function IntegrationCard({
           </div>
           <p className="mt-0.5 truncate text-xs text-slate-500">{info.description}</p>
           {integration && status !== 'disconnected' && (
-            <p className="mt-0.5 text-xs text-slate-400">
+            <p className="mt-0.5 text-xs text-slate-500">
               Connected since{' '}
               <span className="font-medium text-slate-600">
-                {formatDate(integration.connectedAt)}
+                {formatDateTime(integration.connectedAt)}
               </span>
             </p>
           )}
@@ -969,7 +962,7 @@ function IntegrationCard({
           {status === 'disconnected' ? (
             <button
               onClick={onConnect}
-              className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
             >
               <Plug className="h-4 w-4" />
               Connect
@@ -980,7 +973,7 @@ function IntegrationCard({
                 onClick={handleReconnect}
                 disabled={reconnectMutation.isPending}
                 className={cn(
-                  'flex items-center gap-2 rounded border-[1.5px] px-3 py-2 text-sm font-medium transition-all hover:-translate-y-px',
+                  'flex items-center gap-2 rounded-lg border-[1.5px] px-3 py-2 text-sm font-medium transition-all hover:-translate-y-px',
                   needsAttention
                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                     : 'border-slate-200 text-slate-700 hover:bg-slate-50',
@@ -995,7 +988,7 @@ function IntegrationCard({
               </button>
               <button
                 onClick={onSettings}
-                className="flex items-center gap-2 rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
                 Settings
@@ -1003,7 +996,7 @@ function IntegrationCard({
               <button
                 onClick={handleDisconnect}
                 disabled={disconnectMutation.isPending}
-                className="flex items-center gap-2 rounded border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
               >
                 {disconnectMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1315,7 +1308,7 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
                           toast.success('Slack connected!');
                           onSuccess();
                         },
-                        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to connect'),
+                        onError: (err) => toast.error(humanizeError(err, 'Failed to connect')),
                       },
                     );
                   }}
@@ -1337,7 +1330,7 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
                           toast.success('Gmail connected!');
                           onSuccess();
                         },
-                        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to connect'),
+                        onError: (err) => toast.error(humanizeError(err, 'Failed to connect')),
                       },
                     );
                   }}

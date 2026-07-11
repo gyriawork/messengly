@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/dates';
 import {
   useBroadcasts,
   useSendBroadcast,
@@ -148,7 +149,7 @@ export default function BroadcastPage() {
               </button>
               <button
                 onClick={() => router.push('/broadcast/new')}
-                className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
+                className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
               >
                 <Plus className="h-4 w-4" />
                 New Broadcast
@@ -217,7 +218,7 @@ export default function BroadcastPage() {
                 action={
                   <button
                     onClick={() => router.push('/broadcast/new')}
-                    className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
+                    className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
                   >
                     <Plus className="h-4 w-4" />
                     New broadcast
@@ -280,30 +281,9 @@ export default function BroadcastPage() {
                               {Math.round((broadcast.deliveryRate ?? 0) * 100)}% delivered
                             </span>
                           )}
-                          <span>
-                            {new Date(broadcast.createdAt).toLocaleDateString(
-                              'en-GB',
-                              {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              },
-                            )}
-                          </span>
+                          <span>{formatDateTime(broadcast.createdAt)}</span>
                           {broadcast.sentAt && (
-                            <span>
-                              Sent{' '}
-                              {new Date(broadcast.sentAt).toLocaleDateString(
-                                'en-GB',
-                                {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                },
-                              )}
-                            </span>
+                            <span>Sent {formatDateTime(broadcast.sentAt)}</span>
                           )}
                         </div>
                       </div>

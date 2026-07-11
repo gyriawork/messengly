@@ -23,7 +23,7 @@ export default function PlatformSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link

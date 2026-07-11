@@ -11,6 +11,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dates';
 import { useDashboardStats } from '@/hooks/useDashboard';
 import type { ActivityCategory } from '@/types/activity';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
@@ -366,8 +367,5 @@ function formatRelativeTime(dateStr: string): string {
   if (diffHour < 24) return `${diffHour}h ago`;
   if (diffDay < 7) return `${diffDay}d ago`;
 
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatDate(date);
 }

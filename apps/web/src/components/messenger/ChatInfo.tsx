@@ -299,7 +299,7 @@ export function ChatInfo() {
                 />
                 <button
                   onClick={handleSaveOwner}
-                  className="flex h-6 w-6 items-center justify-center rounded bg-accent text-white hover:bg-accent-hover"
+                  className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover"
                 >
                   <Check className="h-3 w-3" />
                 </button>

@@ -417,7 +417,7 @@ function MessageBubble({
           <button
             onClick={handleDelete}
             disabled={isDeletePending}
-            className="rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-lg bg-red-600 px-2 py-1 text-white hover:bg-red-700 disabled:opacity-50"
           >
             {isDeletePending ? 'Deleting...' : 'Delete'}
           </button>
@@ -493,7 +493,7 @@ function MessageBubble({
               <button
                 onClick={handleEditSave}
                 disabled={isEditPending}
-                className="rounded bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
+                className="rounded-lg bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {isEditPending ? 'Saving...' : 'Save'}
               </button>

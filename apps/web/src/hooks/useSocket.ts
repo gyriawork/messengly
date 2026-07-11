@@ -48,9 +48,11 @@ export function useSocket() {
       auth: { token: accessToken },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
+      // Never give up: after a laptop sleep or an API deploy the socket must
+      // come back on its own, or live updates silently die until a reload.
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
     });
 
     socket.on('connect', () => {
@@ -63,8 +65,21 @@ export function useSocket() {
       console.log('[WS] Disconnected:', reason);
     });
 
+    let refreshingAuth = false;
     socket.on('connect_error', (err) => {
       console.error('[WS] Connection error:', err.message);
+      // A 15-minute access token outlives idle tabs. Refresh it once per
+      // failure wave; the store update re-runs this effect and reconnects
+      // with the fresh token.
+      if (!refreshingAuth && /auth|token|unauthorized|jwt/i.test(err.message)) {
+        refreshingAuth = true;
+        useAuthStore
+          .getState()
+          .refreshToken()
+          .finally(() => {
+            refreshingAuth = false;
+          });
+      }
     });
 
     // Real-time message received → optimistically insert into cache

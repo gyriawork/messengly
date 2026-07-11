@@ -318,7 +318,7 @@ export function BroadcastWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 md:py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-8">
         <button
@@ -665,7 +665,7 @@ export function BroadcastWizard() {
                         >
                           <div
                             className={cn(
-                              'flex h-5 w-5 shrink-0 items-center justify-center rounded border-[1.5px] transition-all',
+                              'flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border-[1.5px] transition-all',
                               isSelected
                                 ? 'border-accent bg-accent'
                                 : 'border-slate-300 bg-white',
@@ -926,7 +926,7 @@ export function BroadcastWizard() {
                 disabled={
                   createMutation.isPending || updateMutation.isPending
                 }
-                className="flex items-center gap-1.5 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
               >
                 <Save className="h-4 w-4" />
                 Save as Draft
@@ -938,7 +938,7 @@ export function BroadcastWizard() {
                   updateMutation.isPending ||
                   sendMutation.isPending
                 }
-                className="flex items-center gap-1.5 rounded bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 {scheduleType === 'later' ? 'Schedule' : 'Send Now'}
@@ -947,7 +947,7 @@ export function BroadcastWizard() {
           ) : (
             <button
               onClick={handleNext}
-              className="flex items-center gap-1.5 rounded bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
             >
               Next
               <ArrowRight className="h-4 w-4" />

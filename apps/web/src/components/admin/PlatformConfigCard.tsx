@@ -144,7 +144,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
           <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => setEditing(true)}
-              className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
             >
               <Pencil className="h-4 w-4" />
               {entry.configured ? 'Edit Credentials' : 'Configure'}
@@ -152,7 +152,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
             {entry.configured && entry.source === 'database' && (
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-2 rounded border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-all hover:-translate-y-px hover:bg-red-50"
               >
                 <Trash2 className="h-4 w-4" />
                 Remove
@@ -184,7 +184,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
                   type={field.type === 'password' ? 'password' : 'text'}
                   placeholder={`Enter ${field.label}`}
                   className={cn(
-                    'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+                    'w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
                     'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
                     form.formState.errors[field.key] && 'border-red-300 focus:border-red-400 focus:ring-red-100',
                   )}
@@ -200,14 +200,14 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
               <button
                 type="button"
                 onClick={() => { setEditing(false); form.reset(); }}
-                className="flex-1 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+                className="flex-1 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={updateMutation.isPending}
-                className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
               >
                 {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 Save
@@ -232,7 +232,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
               <button
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
-                className="flex flex-1 items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {deleteMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                 Remove

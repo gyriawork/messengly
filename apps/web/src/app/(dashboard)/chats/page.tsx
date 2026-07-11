@@ -22,11 +22,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dates';
 import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { Chat, MessengerType } from '@/types/chat';
@@ -48,10 +50,10 @@ const messengerConfig: Record<
   teams: { label: 'MS Teams', abbr: 'MT', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text', dotColor: 'bg-[#4B53BC]' },
 };
 
-const statusChip: Record<string, { label: string; className: string }> = {
-  active: { label: 'Active', className: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-300' },
-  inactive: { label: 'Inactive', className: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-300' },
-  'read-only': { label: 'Read-only', className: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-300' },
+const statusChip: Record<string, { label: string; tone: 'positive' | 'negative' | 'warning' }> = {
+  active: { label: 'Active', tone: 'positive' },
+  inactive: { label: 'Inactive', tone: 'negative' },
+  'read-only': { label: 'Read-only', tone: 'warning' },
 };
 
 const chatTypeIcons: Record<string, typeof MessageSquare> = {
@@ -75,7 +77,7 @@ function exportChatsToXls(chats: Chat[]) {
     c.chatType,
     c.ownerName ?? '',
     (c.tags ?? []).map((t) => t.name).join(', '),
-    formatDateCreated(c.createdAt),
+    formatDate(c.createdAt),
   ]);
   const body =
     `<table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
@@ -140,13 +142,13 @@ function AssignOwnerDropdown({
             onChange={(e) => setOwnerName(e.target.value)}
             placeholder="e.g. John, Sales team…"
             autoFocus
-            className="w-full rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+            className="w-full rounded-lg border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
           <div className="flex gap-1.5">
             <button
               type="submit"
               disabled={assignMutation.isPending || !ownerName.trim()}
-              className="flex-1 rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              className="flex-1 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
             >
               Save
             </button>
@@ -154,7 +156,7 @@ function AssignOwnerDropdown({
               type="button"
               onClick={() => save('')}
               disabled={assignMutation.isPending}
-              className="rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-lg border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
               Clear
             </button>
@@ -358,14 +360,14 @@ function BulkActions({
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 rounded border-[1.5px] border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  className="flex-1 rounded-lg border-[1.5px] border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="flex flex-1 items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
                   {deleteMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                   Delete
@@ -407,6 +409,7 @@ function ChatRowActions({ chat }: { chat: Chat }) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-label="Chat actions"
         className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
       >
         <MoreHorizontal className="h-4 w-4" />
@@ -435,14 +438,6 @@ function ChatRowActions({ chat }: { chat: Chat }) {
 }
 
 // Relative-time formatter shared by ChatsPage and GroupRow.
-function formatDateCreated(iso?: string) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getFullYear()}`;
-}
-
 // ─── GroupRow ───
 // Renders a virtual row representing a group of Gmail chats from the same
 // sender domain. Visually identical to a normal chat row. Click navigates
@@ -536,7 +531,7 @@ function GroupRow({
 
       {/* Last active */}
       <td className="px-4 py-3 text-xs text-slate-500">
-        {formatDateCreated(
+        {formatDate(
           new Date(
             Math.min(...group.chats.map((c) => new Date(c.createdAt ?? 0).getTime())),
           ).toISOString(),
@@ -803,7 +798,7 @@ export default function ChatsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search chats..."
-            className="w-full rounded border-[1.5px] border-slate-200 py-2 pl-9 pr-3 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+            className="w-full rounded-lg border-[1.5px] border-slate-200 py-2 pl-9 pr-3 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
         </div>
 
@@ -811,7 +806,7 @@ export default function ChatsPage() {
         <select
           value={messengerFilter ?? ''}
           onChange={(e) => setMessengerFilter((e.target.value as MessengerType) || null)}
-          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All Messengers</option>
           {(Object.keys(messengerConfig) as MessengerType[])
@@ -825,7 +820,7 @@ export default function ChatsPage() {
         <select
           value={statusFilter ?? ''}
           onChange={(e) => setStatusFilter(e.target.value || null)}
-          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -837,7 +832,7 @@ export default function ChatsPage() {
         <select
           value={chatTypeFilter ?? ''}
           onChange={(e) => setChatTypeFilter(e.target.value || null)}
-          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All types</option>
           <option value="direct">Direct</option>
@@ -849,7 +844,7 @@ export default function ChatsPage() {
         <select
           value={tagFilter ?? ''}
           onChange={(e) => setTagFilter(e.target.value || null)}
-          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All tags</option>
           {(tagsData?.tags ?? []).map((tag) => (
@@ -862,14 +857,14 @@ export default function ChatsPage() {
           value={ownerFilter ?? ''}
           onChange={(e) => setOwnerFilter(e.target.value || null)}
           placeholder="Filter by owner..."
-          className="rounded border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-full sm:w-36"
+          className="rounded-lg border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-full sm:w-36"
         />
 
         {/* Sort dropdown */}
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="createdAt">Sort: Date Created</option>
           <option value="lastMessageDate">Sort: Last Message</option>
@@ -883,7 +878,7 @@ export default function ChatsPage() {
         {/* Sort direction toggle */}
         <button
           onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-          className="flex items-center gap-1 rounded border-[1.5px] border-slate-200 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+          className="flex items-center gap-1 rounded-lg border-[1.5px] border-slate-200 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-50"
           title={sortDir === 'desc' ? 'Descending' : 'Ascending'}
         >
           <ArrowUpDown className="h-3.5 w-3.5" />
@@ -894,7 +889,7 @@ export default function ChatsPage() {
         <button
           onClick={() => exportChatsToXls(chats)}
           disabled={chats.length === 0}
-          className="flex items-center gap-1.5 rounded border-[1.5px] border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg border-[1.5px] border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
           title="Export chats to Excel"
         >
           <Download className="h-3.5 w-3.5" />
@@ -944,7 +939,7 @@ export default function ChatsPage() {
               isSuperadmin ? (
                 <a
                   href="/settings"
-                  className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
                 >
                   <Plus className="h-4 w-4" />
                   Connect messenger
@@ -1049,7 +1044,7 @@ export default function ChatsPage() {
               isSuperadmin ? (
                 <a
                   href="/settings"
-                  className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
                 >
                   <Plus className="h-4 w-4" />
                   Connect messenger
@@ -1058,14 +1053,15 @@ export default function ChatsPage() {
             }
           />
         ) : (
+          <div className="overflow-x-auto">
           <table
             className={cn(
-              'w-full [&_tbody_td]:transition-[padding] [&_tbody_td]:duration-200',
+              'w-full min-w-[860px] [&_tbody_td]:transition-[padding] [&_tbody_td]:duration-200',
               compactView && '[&_tbody_td]:py-1',
             )}
           >
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="w-10 px-4 py-3">
                   <input
                     type="checkbox"
@@ -1147,14 +1143,9 @@ export default function ChatsPage() {
 
                     {/* Status */}
                     <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-                          (statusChip[chat.status] ?? statusChip.active).className,
-                        )}
-                      >
+                      <StatusBadge tone={(statusChip[chat.status] ?? statusChip.active).tone}>
                         {(statusChip[chat.status] ?? statusChip.active).label}
-                      </span>
+                      </StatusBadge>
                     </td>
 
                     {/* Messenger */}
@@ -1206,7 +1197,7 @@ export default function ChatsPage() {
 
                     {/* Date created */}
                     <td className="px-4 py-3 text-xs text-slate-500">
-                      {formatDateCreated(chat.createdAt)}
+                      {formatDate(chat.createdAt)}
                     </td>
 
                     {/* Actions — superadmin only (chat management) */}
@@ -1218,6 +1209,7 @@ export default function ChatsPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

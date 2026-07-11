@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dates';
 import { api } from '@/lib/api';
 import {
   useTemplates,
@@ -174,6 +175,7 @@ export default function TemplatesPage() {
                 <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     onClick={() => setEditingTemplate(template)}
+                    aria-label="Edit template"
                     title="Edit"
                     className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                   >
@@ -181,6 +183,7 @@ export default function TemplatesPage() {
                   </button>
                   <button
                     onClick={() => handleDuplicate(template.id)}
+                    aria-label="Duplicate template"
                     title="Duplicate"
                     className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                   >
@@ -188,6 +191,7 @@ export default function TemplatesPage() {
                   </button>
                   <button
                     onClick={() => handleDelete(template.id)}
+                    aria-label="Delete template"
                     title="Delete"
                     className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
                   >
@@ -202,20 +206,13 @@ export default function TemplatesPage() {
               </p>
 
               {/* Meta — one line, matching the Broadcasts card */}
-              <div className="flex flex-wrap items-center gap-4 border-t border-slate-50 pt-3 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-4 border-t border-slate-50 pt-3 text-xs text-slate-500">
                 <span className="inline-flex items-center gap-1 font-medium text-slate-600">
                   <BarChart3 className="h-3 w-3" />
                   Used {template.usageCount} times
                 </span>
                 {template.createdByName && <span>by {template.createdByName}</span>}
-                <span>
-                  Updated{' '}
-                  {new Date(template.updatedAt).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
+                <span>Updated {formatDate(template.updatedAt)}</span>
               </div>
             </div>
           ))}

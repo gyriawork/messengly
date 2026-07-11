@@ -320,7 +320,7 @@ export function AntibanSliders({
         <button
           onClick={handleSave}
           disabled={isSaving || isLoading}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           {isSaving ? 'Saving...' : 'Save Settings'}
         </button>

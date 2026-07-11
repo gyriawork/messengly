@@ -274,7 +274,7 @@ export function AntibanSettings() {
       <div className="mt-3 flex gap-2">
         <button
           onClick={handleReset}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded border-[1.5px] border-slate-200 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-slate-200 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
         >
           <RotateCcw className="h-3.5 w-3.5" />
           Reset
@@ -282,7 +282,7 @@ export function AntibanSettings() {
         <button
           onClick={handleSave}
           disabled={updateMutation.isPending}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded bg-accent py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           <Save className="h-3.5 w-3.5" />
           Save

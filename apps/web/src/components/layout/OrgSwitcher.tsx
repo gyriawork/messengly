@@ -65,7 +65,7 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
           value={selectedOrgId ?? ''}
           onChange={(e) => handleChange(e.target.value)}
           className={cn(
-            'w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 pr-7 text-xs text-white/80 outline-none transition-colors',
+            'w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 pr-7 text-xs font-medium text-white outline-none transition-colors',
             'hover:bg-white/10 focus:border-white/20 focus:bg-white/10',
           )}
         >

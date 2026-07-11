@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/dates';
 import {
   useBroadcast,
   useRetryBroadcast,
@@ -152,7 +153,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   const timeline = buildTimeline(broadcast);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Back button */}
       <button
         onClick={() => router.push('/broadcast')}
@@ -180,14 +181,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Created{' '}
-            {new Date(broadcast.createdAt).toLocaleString('en-GB', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            Created {formatDateTime(broadcast.createdAt)}
           </p>
         </div>
         <div className="flex gap-1">
@@ -569,7 +563,7 @@ function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolea
                 const meta = messengerMeta[c.messenger];
                 return (
                   <div key={c.chatId} className="flex items-baseline gap-2">
-                    <span className="shrink-0 tabular-nums text-slate-400">
+                    <span className="shrink-0 tabular-nums text-slate-500">
                       {c.ts
                         ? new Date(c.ts).toLocaleTimeString('en-GB', { hour12: false })
                         : '--:--:--'}

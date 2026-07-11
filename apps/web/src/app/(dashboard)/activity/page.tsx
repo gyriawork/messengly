@@ -11,6 +11,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/dates';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useActivity } from '@/hooks/useActivity';
@@ -319,10 +320,5 @@ function formatTimestamp(dateStr: string): string {
   if (diffHour < 24) return `${diffHour}h ago`;
   if (diffDay < 7) return `${diffDay}d ago`;
 
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTime(date);
 }

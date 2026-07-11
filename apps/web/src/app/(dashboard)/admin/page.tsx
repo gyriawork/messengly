@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dates';
 import { useAuthStore } from '@/stores/auth';
 import {
   useOrganizations,
@@ -71,7 +72,7 @@ export default function AdminPage() {
   const organizations = data?.organizations || [];
 
   return (
-    <div className="px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -192,11 +193,7 @@ export default function AdminPage() {
                     {org._count?.broadcasts ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500">
-                    {new Date(org.createdAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {formatDate(org.createdAt)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">

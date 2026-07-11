@@ -12,7 +12,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { humanizeError } from '@/lib/errors';
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useTags';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 // ─── Constants ───
@@ -116,7 +119,7 @@ function TagModal({
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. VIP, Support, Urgent"
               autoFocus
-              className="w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+              className="w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
             />
           </div>
 
@@ -151,14 +154,14 @@ function TagModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+              className="flex-1 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPending || !name.trim()}
-              className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === 'create' ? 'Create Tag' : 'Save Changes'}
@@ -194,14 +197,14 @@ function DeleteConfirm({
         <div className="mt-5 flex gap-2">
           <button
             onClick={onCancel}
-            className="flex-1 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+            className="flex-1 rounded-lg border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={isPending}
-            className="flex flex-1 items-center justify-center gap-2 rounded bg-red-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-red-700 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-red-700 disabled:opacity-50"
           >
             {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Delete
@@ -236,13 +239,14 @@ function TagCard({
         >
           {tag.name}
         </span>
-        <span className="shrink-0 text-xs text-slate-400">
+        <span className="shrink-0 text-xs text-slate-500">
           {tag.chatCount ?? 0} chat{(tag.chatCount ?? 0) !== 1 ? 's' : ''}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           onClick={onEdit}
+          aria-label="Edit tag"
           className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           title="Edit tag"
         >
@@ -250,6 +254,7 @@ function TagCard({
         </button>
         <button
           onClick={onDelete}
+          aria-label="Delete tag"
           className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
           title="Delete tag"
         >
@@ -303,24 +308,30 @@ export default function TagsPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-accent" />
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 rounded-xl bg-white p-5 shadow-xs">
+              <Skeleton className="h-3 w-3 rounded-full" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
         </div>
       ) : tags.length === 0 ? (
-        <div className="py-20 text-center">
-          <TagIcon className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-          <p className="text-sm font-medium text-slate-600">No tags yet</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Tags help you group chats so the right people are one click away
-          </p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="mt-4 inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
-          >
-            <Plus className="h-4 w-4" />
-            Create First Tag
-          </button>
-        </div>
+        <EmptyState
+          icon={<TagIcon className="h-12 w-12" />}
+          title="No tags yet"
+          description="Tags help you group chats so the right people are one click away."
+          action={
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+            >
+              <Plus className="h-4 w-4" />
+              Create first tag
+            </button>
+          }
+        />
       ) : (
         <div className="space-y-3">
           {tags.map((tag) => (
@@ -348,7 +359,7 @@ export default function TagsPage() {
               },
               onError: (err) =>
                 toast.error(
-                  err instanceof Error ? err.message : 'Failed to create tag',
+                  humanizeError(err, 'Failed to create tag'),
                 ),
             });
           }}
@@ -373,7 +384,7 @@ export default function TagsPage() {
                 },
                 onError: (err) =>
                   toast.error(
-                    err instanceof Error ? err.message : 'Failed to update tag',
+                    humanizeError(err, 'Failed to update tag'),
                   ),
               },
             );
@@ -395,7 +406,7 @@ export default function TagsPage() {
               },
               onError: (err) =>
                 toast.error(
-                  err instanceof Error ? err.message : 'Failed to delete tag',
+                  humanizeError(err, 'Failed to delete tag'),
                 ),
             });
           }}

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { humanizeError } from '@/lib/errors';
 import { api } from '@/lib/api';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getSocket } from '@/hooks/useSocket';
@@ -222,7 +223,7 @@ export function ConnectAndImportWizard({
       setSelected(new Set(data.chats.map((c) => c.externalChatId)));
       setStep('selecting');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load chats');
+      setError(humanizeError(err, 'Failed to load chats'));
       setStep('error');
     }
   }, [messenger]);
@@ -298,7 +299,7 @@ export function ConnectAndImportWizard({
       }
     } catch (err) {
       importingRef.current = false;
-      setError(err instanceof Error ? err.message : 'Import failed');
+      setError(humanizeError(err, 'Import failed'));
       setStep('error');
     }
   }, [selected, chats, messenger, queryClient]);
