@@ -143,7 +143,7 @@ export function Sidebar() {
                 'group relative flex items-center rounded-lg transition-all',
                 collapsed
                   ? 'h-12 w-12 justify-center'
-                  : 'gap-4 px-4 py-3 text-xl font-bold',
+                  : 'gap-4 px-4 py-3 text-xl font-bold uppercase tracking-wide',
                 active
                   ? 'bg-white/15 text-white ring-4 ring-inset ring-white/20'
                   : 'text-white/50 hover:bg-white/5 hover:text-white/80',
