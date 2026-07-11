@@ -62,16 +62,16 @@ export function Sidebar() {
     <aside
       className={cn(
         'hidden h-[100dvh] flex-col bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-4 transition-all duration-200 md:flex',
-        collapsed ? 'w-14 items-center px-1.5' : 'w-56 px-3',
+        collapsed ? 'w-16 items-center px-2' : 'w-80 px-4',
       )}
     >
       {/* Logo + Collapse toggle */}
       <div className={cn('mb-6 flex items-center', collapsed ? 'justify-center' : 'justify-between px-2')}>
         <div className="flex items-center gap-2.5">
           {collapsed ? (
-            <img src="/logo-icon.svg" alt="m" className="h-6" />
+            <img src="/logo-icon.svg" alt="m" className="h-7" />
           ) : (
-            <img src="/logo.svg" alt="messengly" className="h-5" />
+            <img src="/logo.svg" alt="messengly" className="h-7" />
           )}
         </div>
         {!collapsed && (
@@ -80,7 +80,7 @@ export function Sidebar() {
             className="rounded-md p-1 text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
             title="Collapse sidebar"
           >
-            <ChevronsLeft className="h-4 w-4" />
+            <ChevronsLeft className="h-5 w-5" />
           </button>
         )}
       </div>
@@ -89,10 +89,10 @@ export function Sidebar() {
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}
-          className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
+          className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
           title="Expand sidebar"
         >
-          <ChevronsRight className="h-4 w-4" />
+          <ChevronsRight className="h-5 w-5" />
         </button>
       )}
 
@@ -116,17 +116,17 @@ export function Sidebar() {
         // Sliding active indicator: items are uniform (item height + gap-0.5),
         // so the bar just translates to activeIndex × stride.
         const activeIndex = navItems.findIndex(({ href }) => isActive(href));
-        const stride = collapsed ? 42 : 38;
-        const itemH = collapsed ? 40 : 36;
+        const stride = collapsed ? 50 : 54;
+        const itemH = collapsed ? 48 : 52;
         return (
       <nav className={cn('relative flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
         {activeIndex >= 0 && (
           <span
             aria-hidden
-            className="absolute left-0 w-0.5 rounded-full bg-white/90 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out"
+            className="absolute left-0 w-1 rounded-full bg-white/90 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out"
             style={{
-              height: 24,
-              top: (itemH - 24) / 2,
+              height: 32,
+              top: (itemH - 32) / 2,
               transform: `translateY(${activeIndex * stride}px)`,
             }}
           />
@@ -141,14 +141,14 @@ export function Sidebar() {
               className={cn(
                 'group relative flex items-center rounded-lg transition-all',
                 collapsed
-                  ? 'h-10 w-10 justify-center'
-                  : 'gap-3 px-2.5 py-2 text-sm',
+                  ? 'h-12 w-12 justify-center'
+                  : 'gap-4 px-4 py-3 text-xl',
                 active
-                  ? 'bg-white/15 font-medium text-white'
+                  ? 'bg-white/15 font-medium text-white ring-4 ring-inset ring-white/20'
                   : 'text-white/50 hover:bg-white/5 hover:text-white/80',
               )}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2 : 1.5} />
+              <Icon className="h-7 w-7 shrink-0" strokeWidth={active ? 2 : 1.5} />
               {!collapsed && label}
               {collapsed && (
                 <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
@@ -171,13 +171,13 @@ export function Sidebar() {
       >
         <div
           title={collapsed ? (user?.name || 'User') : undefined}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-avatar bg-white/15 text-xs font-medium text-white"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-avatar bg-white/15 text-sm font-medium text-white"
         >
           {initials}
         </div>
         {!collapsed && (
           <>
-            <span className="min-w-0 flex-1 truncate text-xs text-white/60">
+            <span className="min-w-0 flex-1 truncate text-sm text-white/60">
               {user?.name || user?.email || 'User'}
             </span>
             <button
@@ -185,7 +185,7 @@ export function Sidebar() {
               title="Sign out"
               className="shrink-0 rounded-md p-1 text-white/40 transition-colors hover:bg-white/5 hover:text-white/60"
             >
-              <LogOut className="h-4 w-4" strokeWidth={1.5} />
+              <LogOut className="h-5 w-5" strokeWidth={1.5} />
             </button>
           </>
         )}
@@ -195,7 +195,7 @@ export function Sidebar() {
             title="Sign out"
             className="group relative flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white/60"
           >
-            <LogOut className="h-4 w-4" strokeWidth={1.5} />
+            <LogOut className="h-5 w-5" strokeWidth={1.5} />
             <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
               Sign out
             </span>

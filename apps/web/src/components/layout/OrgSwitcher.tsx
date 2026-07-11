@@ -57,7 +57,7 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div className="mb-4 px-1">
-      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-white/30">
+      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-white/40">
         Organization
       </label>
       <div className="relative">
@@ -65,7 +65,7 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
           value={selectedOrgId ?? ''}
           onChange={(e) => handleChange(e.target.value)}
           className={cn(
-            'w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 pr-7 text-xs font-medium text-white outline-none transition-colors',
+            'w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 pr-8 text-sm font-medium text-white outline-none transition-colors',
             'hover:bg-white/10 focus:border-white/20 focus:bg-white/10',
           )}
         >
@@ -78,12 +78,12 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/30" />
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
       </div>
       {selectedOrgId && (
         <button
           onClick={() => handleChange('')}
-          className="mt-1 flex items-center gap-1 text-[10px] text-white/30 transition-colors hover:text-white/50"
+          className="mt-1.5 flex items-center gap-1 text-xs text-white/40 transition-colors hover:text-white/60"
         >
           <X className="h-2.5 w-2.5" />
           Clear selection
