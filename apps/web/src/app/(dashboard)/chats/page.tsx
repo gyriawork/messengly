@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect } from 'react';
 import {
   Search,
   Plus,
@@ -554,14 +554,21 @@ export default function ChatsPage() {
 
   // Compact view: a third of the row height, no avatars. Persisted per browser.
   const [compactView, setCompactView] = useState(false);
-  useEffect(() => {
+  // Rows animate ONLY on a manual toggle. Restoring the saved mode must be
+  // instant, so transitions stay off until the user flips the switch.
+  const [viewToggledManually, setViewToggledManually] = useState(false);
+  // Layout effect: the saved mode applies before the first paint, so a
+  // compact-mode visitor never sees the normal rows collapse.
+  useLayoutEffect(() => {
     setCompactView(localStorage.getItem('chats-compact-view') === '1');
   }, []);
-  const toggleCompactView = () =>
+  const toggleCompactView = () => {
+    setViewToggledManually(true);
     setCompactView((v) => {
       localStorage.setItem('chats-compact-view', v ? '0' : '1');
       return !v;
     });
+  };
   const refreshStatuses = useRefreshChatStatuses();
 
   const handleRefreshStatuses = () => {
@@ -1056,7 +1063,8 @@ export default function ChatsPage() {
           <div className="overflow-x-auto">
           <table
             className={cn(
-              'w-full min-w-[860px] [&_tbody_td]:transition-[padding] [&_tbody_td]:duration-200',
+              'w-full min-w-[860px]',
+              viewToggledManually && '[&_tbody_td]:transition-[padding] [&_tbody_td]:duration-200',
               compactView && '[&_tbody_td]:py-1',
             )}
           >
