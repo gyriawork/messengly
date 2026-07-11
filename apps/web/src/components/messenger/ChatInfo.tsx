@@ -213,8 +213,8 @@ export function ChatInfo() {
     updateChat(
       { chatId: chat.id, tags: currentTagIds },
       {
-        onSuccess: () => toast.success('Tag removed'),
-        onError: () => toast.error('Failed to remove tag'),
+        onSuccess: () => toast.success('Label removed'),
+        onError: () => toast.error('Failed to remove label'),
       },
     );
   };
@@ -226,7 +226,7 @@ export function ChatInfo() {
       {
         onSuccess: () => {
           setShowAddTag(false);
-          toast.success('Tag added');
+          toast.success('Label added');
         },
         onError: () => toast.error('Failed to add tag'),
       },
@@ -472,7 +472,7 @@ export function ChatInfo() {
 
         {/* Tags (editable) */}
         <div className="border-b border-slate-100 p-4">
-          <SectionTitle>Tags</SectionTitle>
+          <SectionTitle>Labels</SectionTitle>
           {chat.tags && chat.tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {chat.tags.map((tag) => (
@@ -497,7 +497,7 @@ export function ChatInfo() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-400">No tags assigned</p>
+            <p className="text-xs text-slate-400">No labels assigned</p>
           )}
 
           {/* Add tag */}
@@ -533,7 +533,7 @@ export function ChatInfo() {
               className="mt-2 flex items-center gap-1 text-xs text-accent hover:text-accent-hover"
             >
               <Plus className="h-3 w-3" />
-              Add tag
+              Add label
             </button>
           )}
         </div>

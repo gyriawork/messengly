@@ -603,96 +603,109 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         }
       }
 
-      try {
-        for (const chatInfo of selectedChats) {
-          try {
-            // 1. Upsert chat record
-            const chat = await prisma.chat.upsert({
-              where: {
-                externalChatId_messenger_organizationId: {
-                  externalChatId: chatInfo.externalChatId,
-                  messenger,
-                  organizationId,
-                },
-              },
-              create: {
-                name: chatInfo.name,
-                messenger,
+      // Import one chat's record + recent history. Written to run concurrently.
+      // Arrow (not a hoisted `function`) so the non-null narrowing of
+      // organizationId from the guard above is preserved inside the closure.
+      const importOne = async (chatInfo: (typeof selectedChats)[number]): Promise<void> => {
+        try {
+          // 1. Upsert chat record
+          const chat = await prisma.chat.upsert({
+            where: {
+              externalChatId_messenger_organizationId: {
                 externalChatId: chatInfo.externalChatId,
-                chatType: chatInfo.chatType,
+                messenger,
                 organizationId,
-                importedById: userId,
-                ownerId: userId,
-                syncStatus: 'synced',
-                hasFullHistory: false,
-                lastActivityAt: new Date(),
               },
-              update: {
-                // Update name if stored as raw ID
-                ...(chatInfo.name !== chatInfo.externalChatId ? { name: chatInfo.name } : {}),
-              },
-            });
-
-            // 2. Fetch recent messages (50)
-            let messageCount = 0;
-            if (adapter.getMessages) {
-              try {
-                const messages = await adapter.getMessages(chatInfo.externalChatId, 50);
-
-                if (messages.length > 0) {
-                  // Resolve all unique sender names
-                  const uniqueSenderIds = [...new Set(messages.map((m: { senderId: string }) => m.senderId).filter(Boolean))] as string[];
-                  await Promise.all(uniqueSenderIds.map((id) => resolveSenderName(id)));
-
-                  // Bulk insert messages, skip duplicates
-                  const messageData = messages.map((m: { id: string; text: string; senderId: string; date: Date; out: boolean }) => ({
-                    chatId: chat.id,
-                    externalMessageId: m.id,
-                    senderName: senderNameCache.get(m.senderId) || m.senderId || 'Unknown',
-                    senderExternalId: m.senderId || null,
-                    isSelf: m.out,
-                    text: m.text || '',
-                    createdAt: m.date,
-                  }));
-
-                  const result = await prisma.message.createMany({
-                    data: messageData,
-                    skipDuplicates: true,
-                  });
-                  messageCount = result.count;
-
-                  // Update chat lastActivityAt from newest message
-                  if (messages.length > 0) {
-                    const newest = messages[messages.length - 1];
-                    await prisma.chat.update({
-                      where: { id: chat.id },
-                      data: { lastActivityAt: newest.date },
-                    });
-                  }
-                }
-              } catch (msgErr) {
-                console.warn(`[import-with-history] Failed to fetch messages for ${chatInfo.name}:`, msgErr);
-              }
-            }
-
-            imported.push({
-              id: chat.id,
-              name: chat.name,
+            },
+            create: {
+              name: chatInfo.name,
+              messenger,
               externalChatId: chatInfo.externalChatId,
-              messageCount,
-            });
-          } catch (chatErr) {
-            console.warn(`[import-with-history] Failed to import chat ${chatInfo.name}:`, chatErr);
-            failed++;
+              chatType: chatInfo.chatType,
+              organizationId,
+              importedById: userId,
+              ownerId: userId,
+              syncStatus: 'synced',
+              hasFullHistory: false,
+              lastActivityAt: new Date(),
+            },
+            update: {
+              // Update name if stored as raw ID
+              ...(chatInfo.name !== chatInfo.externalChatId ? { name: chatInfo.name } : {}),
+            },
+          });
+
+          // 2. Fetch recent messages (50)
+          let messageCount = 0;
+          if (adapter.getMessages) {
+            try {
+              const messages = await adapter.getMessages(chatInfo.externalChatId, 50);
+
+              if (messages.length > 0) {
+                // Resolve all unique sender names
+                const uniqueSenderIds = [...new Set(messages.map((m: { senderId: string }) => m.senderId).filter(Boolean))] as string[];
+                await Promise.all(uniqueSenderIds.map((id) => resolveSenderName(id)));
+
+                // Bulk insert messages, skip duplicates
+                const messageData = messages.map((m: { id: string; text: string; senderId: string; date: Date; out: boolean }) => ({
+                  chatId: chat.id,
+                  externalMessageId: m.id,
+                  senderName: senderNameCache.get(m.senderId) || m.senderId || 'Unknown',
+                  senderExternalId: m.senderId || null,
+                  isSelf: m.out,
+                  text: m.text || '',
+                  createdAt: m.date,
+                }));
+
+                const result = await prisma.message.createMany({
+                  data: messageData,
+                  skipDuplicates: true,
+                });
+                messageCount = result.count;
+
+                // Update chat lastActivityAt from newest message
+                const newest = messages[messages.length - 1];
+                await prisma.chat.update({
+                  where: { id: chat.id },
+                  data: { lastActivityAt: newest.date },
+                });
+              }
+            } catch (msgErr) {
+              console.warn(`[import-with-history] Failed to fetch messages for ${chatInfo.name}:`, msgErr);
+            }
           }
 
-          done++;
-          io.to(room).emit('import_chat_progress', {
-            done,
-            total,
-            currentName: chatInfo.name,
+          imported.push({
+            id: chat.id,
+            name: chat.name,
+            externalChatId: chatInfo.externalChatId,
+            messageCount,
           });
+        } catch (chatErr) {
+          console.warn(`[import-with-history] Failed to import chat ${chatInfo.name}:`, chatErr);
+          failed++;
         }
+
+        done++;
+        io.to(room).emit('import_chat_progress', {
+          done,
+          total,
+          currentName: chatInfo.name,
+        });
+      }
+
+      try {
+        // Import chats in parallel with a bounded pool: Telegram is rate-limit
+        // sensitive so it stays low; other adapters (and the Teams agent, which
+        // serialises on its own single-browser mutex) tolerate more.
+        const concurrency = messenger === 'telegram' ? 3 : 5;
+        const executing = new Set<Promise<void>>();
+        for (const chatInfo of selectedChats) {
+          const p = importOne(chatInfo).finally(() => executing.delete(p));
+          executing.add(p);
+          if (executing.size >= concurrency) await Promise.race(executing);
+        }
+        await Promise.all(executing);
       } finally {
         try { await adapter.disconnect(); } catch { /* ignore */ }
       }

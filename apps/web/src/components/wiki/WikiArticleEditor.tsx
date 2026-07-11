@@ -368,7 +368,7 @@ export function WikiArticleEditor({
 
         {/* Tags */}
         <div className="mt-6">
-          <label className="mb-2 block text-sm font-medium text-slate-700">Tags</label>
+          <label className="mb-2 block text-sm font-medium text-slate-700">Labels</label>
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => {
               const isSelected = selectedTagIds.includes(tag.id);

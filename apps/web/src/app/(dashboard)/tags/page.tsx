@@ -99,7 +99,7 @@ function TagModal({
       <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-sm md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
-            {mode === 'create' ? 'New Tag' : 'Edit Tag'}
+            {mode === 'create' ? 'New label' : 'Edit label'}
           </h3>
           <button
             onClick={onClose}
@@ -164,7 +164,7 @@ function TagModal({
               className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] disabled:opacity-50"
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Create Tag' : 'Save Changes'}
+              {mode === 'create' ? 'Create label' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -189,10 +189,10 @@ function DeleteConfirm({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
       <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-sm md:rounded-xl">
-        <h3 className="text-lg font-semibold text-slate-900">Delete Tag</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Delete label</h3>
         <p className="mt-2 text-sm text-slate-500">
           Are you sure you want to delete <span className="font-medium text-slate-700">&quot;{tagName}&quot;</span>?
-          This will remove the tag from all chats.
+          This will remove the label from all chats.
         </p>
         <div className="mt-5 flex gap-2">
           <button
@@ -292,9 +292,9 @@ export default function TagsPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Tags</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Labels</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {tags.length} tag{tags.length !== 1 ? 's' : ''} created
+            {tags.length} label{tags.length !== 1 ? 's' : ''} created
           </p>
         </div>
         <button
@@ -302,7 +302,7 @@ export default function TagsPage() {
           className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <Plus className="h-4 w-4" />
-          New Tag
+          New label
         </button>
       </div>
 
@@ -320,8 +320,8 @@ export default function TagsPage() {
       ) : tags.length === 0 ? (
         <EmptyState
           icon={<TagIcon className="h-12 w-12" />}
-          title="No tags yet"
-          description="Tags help you group chats so the right people are one click away."
+          title="No labels yet"
+          description="Labels help you group chats so the right people are one click away."
           action={
             <button
               onClick={() => setShowCreate(true)}
@@ -355,7 +355,7 @@ export default function TagsPage() {
           onSubmit={(data) => {
             createMutation.mutate(data, {
               onSuccess: () => {
-                toast.success(`Tag "${data.name}" created`);
+                toast.success(`Label "${data.name}" created`);
                 setShowCreate(false);
               },
               onError: (err) =>
@@ -380,7 +380,7 @@ export default function TagsPage() {
               { id: editingTag.id, ...data },
               {
                 onSuccess: () => {
-                  toast.success(`Tag "${data.name}" updated`);
+                  toast.success(`Label "${data.name}" updated`);
                   setEditingTag(null);
                 },
                 onError: (err) =>
@@ -402,7 +402,7 @@ export default function TagsPage() {
           onConfirm={() => {
             deleteMutation.mutate(deletingTag.id, {
               onSuccess: () => {
-                toast.success(`Tag "${deletingTag.name}" deleted`);
+                toast.success(`Label "${deletingTag.name}" deleted`);
                 setDeletingTag(null);
               },
               onError: (err) =>

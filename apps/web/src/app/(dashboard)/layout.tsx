@@ -52,9 +52,12 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-[100dvh] bg-[#f8fafc]">
+    // Tinted backdrop; the sidebar and the content sit on it as floating cards
+    // with a gap between them, so the shell reads as panels hovering over a
+    // surface rather than edge-to-edge regions.
+    <div className="flex h-[100dvh] gap-2.5 bg-[#e3e5f0] p-2.5 md:gap-3 md:p-3">
       <Sidebar />
-      <main className="flex-1 overflow-auto pb-14 md:pb-0">
+      <main className="flex-1 overflow-auto rounded-2xl bg-[#f8fafc] pb-14 shadow-sm ring-1 ring-slate-900/5 md:pb-0">
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
       <BottomNav />

@@ -26,16 +26,17 @@ import { OrgSwitcher } from './OrgSwitcher';
 const baseNavItems = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
-  { icon: Activity, href: '/activity', label: 'Activity Log' },
 ];
 
 // Broadcasting tools — visible to every authenticated user, since broadcasting
 // is the regular user's primary (and only) job. Messenger configuration lives
-// under superadmin-only sections.
+// under superadmin-only sections. Activity sits right after Broadcast so the
+// send → review flow reads top to bottom.
 const broadcastNavItems = [
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
+  { icon: Activity, href: '/activity', label: 'Activity' },
   { icon: FileText, href: '/templates', label: 'Templates' },
-  { icon: Tag, href: '/tags', label: 'Tags' },
+  { icon: Tag, href: '/tags', label: 'Labels' },
 ];
 
 export function Sidebar() {
@@ -60,10 +61,9 @@ export function Sidebar() {
 
   return (
     <aside
-      style={{ fontFamily: "'Inter', 'Figtree', system-ui, sans-serif" }}
       className={cn(
-        'hidden h-[100dvh] flex-col bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-4 transition-all duration-200 md:flex',
-        collapsed ? 'w-16 items-center px-2' : 'w-[272px] px-4',
+        'hidden h-full flex-col rounded-2xl bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-4 shadow-lg shadow-indigo-950/20 transition-all duration-200 md:flex',
+        collapsed ? 'w-16 items-center px-2' : 'w-[240px] px-3',
       )}
     >
       {/* Logo + Collapse toggle */}
@@ -117,17 +117,17 @@ export function Sidebar() {
         // Sliding active indicator: items are uniform (item height + gap-0.5),
         // so the bar just translates to activeIndex × stride.
         const activeIndex = navItems.findIndex(({ href }) => isActive(href));
-        const stride = collapsed ? 50 : 54;
-        const itemH = collapsed ? 48 : 52;
+        const stride = collapsed ? 42 : 40;
+        const itemH = collapsed ? 40 : 38;
         return (
       <nav className={cn('relative flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
         {activeIndex >= 0 && (
           <span
             aria-hidden
-            className="absolute left-0 w-1 rounded-full bg-white/90 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out"
+            className="absolute left-0 w-0.5 rounded-full bg-white/90 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out"
             style={{
-              height: 32,
-              top: (itemH - 32) / 2,
+              height: 22,
+              top: (itemH - 22) / 2,
               transform: `translateY(${activeIndex * stride}px)`,
             }}
           />
@@ -142,14 +142,14 @@ export function Sidebar() {
               className={cn(
                 'group relative flex items-center rounded-lg transition-all',
                 collapsed
-                  ? 'h-12 w-12 justify-center'
-                  : 'gap-4 px-4 py-3 text-xl font-bold uppercase tracking-wide',
+                  ? 'h-10 w-10 justify-center'
+                  : 'gap-3 px-3 py-2 text-[15px] font-bold',
                 active
-                  ? 'bg-white/15 text-white ring-4 ring-inset ring-white/20'
-                  : 'text-white/50 hover:bg-white/5 hover:text-white/80',
+                  ? 'bg-white/15 text-white'
+                  : 'text-white/60 hover:bg-white/5 hover:text-white/90',
               )}
             >
-              <Icon className="h-7 w-7 shrink-0" strokeWidth={active ? 2 : 1.5} />
+              <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.25 : 2} />
               {!collapsed && label}
               {collapsed && (
                 <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">

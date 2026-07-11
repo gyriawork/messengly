@@ -70,7 +70,7 @@ function exportChatsToXls(chats: Chat[]) {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Tags', 'Date created'];
+  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Labels', 'Date created'];
   const rows = chats.map((c) => [
     c.name,
     messengerConfig[c.messenger]?.label ?? c.messenger,
@@ -224,7 +224,7 @@ function AddTagDropdown({
       <div className="absolute left-0 top-full z-20 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
         <p className="px-3 py-1.5 text-xs font-medium text-slate-400">Toggle tags</p>
         {tags.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-slate-400">No tags available</p>
+          <p className="px-3 py-2 text-xs text-slate-400">No labels available</p>
         ) : (
           tags.map((tag) => {
             const state = tagStates.get(tag.id) ?? 'none';
@@ -853,7 +853,7 @@ export default function ChatsPage() {
           onChange={(e) => setTagFilter(e.target.value || null)}
           className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
-          <option value="">All tags</option>
+          <option value="">All labels</option>
           {(tagsData?.tags ?? []).map((tag) => (
             <option key={tag.id} value={tag.id}>{tag.name}</option>
           ))}
@@ -877,7 +877,7 @@ export default function ChatsPage() {
           <option value="lastMessageDate">Sort: Last Message</option>
           <option value="name">Sort: Name</option>
           <option value="chatType">Sort: Type</option>
-          <option value="tags">Sort: Tags</option>
+          <option value="tags">Sort: Labels</option>
           <option value="ownerName">Sort: Owner</option>
           <option value="status">Sort: Status</option>
         </select>

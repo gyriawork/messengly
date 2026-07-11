@@ -585,7 +585,7 @@ export function BroadcastWizard() {
                 onChange={(e) => setTagFilter(e.target.value || null)}
                 className="rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-accent focus:outline-none"
               >
-                <option value="">All tags</option>
+                <option value="">All labels</option>
                 {tags.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}

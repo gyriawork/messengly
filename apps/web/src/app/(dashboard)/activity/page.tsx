@@ -95,7 +95,7 @@ export default function ActivityPage() {
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Activity Log</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Activity</h1>
         <p className="mt-1 text-sm text-slate-500">
           Everything that happens in your workspace, in order
         </p>
@@ -264,11 +264,11 @@ export default function ActivityPage() {
                     >
                       {entry.category}
                     </span>
-                    {entry.targetId && entry.targetType && (
+                    {/* Show the human-readable name when we have one; never the
+                        raw entity id — "template: 23b0d423…" is noise. */}
+                    {entry.targetType && (entry.metadata?.preview as string) && (
                       <span className="text-xs text-slate-400">
-                        {entry.targetType}:{' '}
-                        {(entry.metadata?.preview as string) ||
-                          `${entry.targetId.slice(0, 8)}...`}
+                        {entry.targetType}: {entry.metadata?.preview as string}
                       </span>
                     )}
                   </div>
