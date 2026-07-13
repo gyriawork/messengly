@@ -39,6 +39,11 @@ const bullConnection = connection as unknown as ConnectionOptions;
 // Separate connection for pub/sub notifications
 const pubClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 
+// Unhandled 'error' events on ioredis crash the process — log instead; ioredis
+// reconnects on its own.
+connection.on('error', (err) => console.error('[redis] connection error:', err?.message ?? String(err)));
+pubClient.on('error', (err) => console.error('[redis] pubClient error:', err?.message ?? String(err)));
+
 // ─── Logger ───
 
 const log = {
@@ -280,6 +285,11 @@ async function sendMessengerBatch(
 
   const { messagesPerBatch, delayBetweenMessages, delayBetweenBatches, maxMessagesPerHour, maxMessagesPerDay } = antibanConfig;
 
+  // Everything after a successful connect() runs under try/finally: a throw
+  // anywhere in the loop (prisma, ws emit) must still disconnect the adapter,
+  // or the leaked client lives on (gramjs keeps an update loop running that
+  // later floods the logs with TIMEOUT errors).
+  try {
   for (let i = 0; i < messengerChats.length; i++) {
     const bc = messengerChats[i]!;
 
@@ -391,12 +401,12 @@ async function sendMessengerBatch(
       });
     }
   }
-
-  // Disconnect adapter
-  try {
-    await adapter.disconnect();
-  } catch {
-    // Non-critical
+  } finally {
+    try {
+      await adapter.disconnect();
+    } catch {
+      // Non-critical
+    }
   }
 
   return { sent, failed, skipped: skipped + preSkipped };
@@ -704,6 +714,9 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
     return;
   }
 
+  // From here on the adapter must always be released — a throw mid-sync
+  // otherwise leaks a live client (gramjs update loop keeps running).
+  try {
   // Resolve sender names for Telegram (has getSenderName method)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hasSenderNameResolver = 'getSenderName' in adapter && typeof (adapter as any).getSenderName === 'function';
@@ -884,11 +897,11 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
     }
   }
   await Promise.all(executing);
-
-  // Disconnect adapter
-  try {
-    await adapter.disconnect();
-  } catch {}
+  } finally {
+    try {
+      await adapter.disconnect();
+    } catch {}
+  }
 
   log.info('Chat history sync job complete', { chatCount: chatIds.length });
 }
@@ -936,6 +949,8 @@ async function processGmailRehydrate(job: Job<GmailRehydratePayload>): Promise<v
 
   let totalUpdated = 0;
 
+  // try/finally so a throw between chats never leaks the connected adapter.
+  try {
   for (const chatId of chatIds) {
     try {
       const chat = await prisma.chat.findUnique({
@@ -1017,8 +1032,9 @@ async function processGmailRehydrate(job: Job<GmailRehydratePayload>): Promise<v
       log.error(`Error rehydrating chat ${chatId}`, { error: String(err) });
     }
   }
-
-  try { await adapter.disconnect(); } catch {}
+  } finally {
+    try { await adapter.disconnect(); } catch {}
+  }
 
   log.info('Gmail rehydrate job complete', {
     chatCount: chatIds.length,
@@ -1684,6 +1700,74 @@ async function recoverOverdueScheduledBroadcasts(): Promise<void> {
   }
 }
 
+// ─── Stuck 'sending' Broadcast Recovery ───
+// A deploy can kill the worker mid-send. The boot sweep flips in-flight
+// 'sending' rows to unverified failures, but the broadcast itself stays
+// 'sending' and its untouched 'pending'/'retrying' rows would never go out —
+// BullMQ's stalled-job redelivery gives up after one stall. Safe to re-enqueue:
+// the send processor only picks up rows still in 'pending', so nothing already
+// attempted can be sent twice.
+async function recoverStuckSendingBroadcasts(): Promise<void> {
+  try {
+    const queue = new Queue('broadcast', { connection: bullConnection });
+
+    const stuck = await prisma.broadcast.findMany({
+      where: { status: 'sending' },
+      select: { id: true, organizationId: true },
+    });
+    if (stuck.length === 0) {
+      await queue.close();
+      return;
+    }
+
+    // Skip broadcasts that still have a live job — BullMQ's own stalled
+    // redelivery may be about to resume them.
+    const liveJobs = await queue.getJobs(['active', 'waiting', 'delayed', 'prioritized']);
+    const liveIds = new Set(
+      liveJobs
+        .map((j) => (j?.data as { broadcastId?: string } | undefined)?.broadcastId)
+        .filter(Boolean),
+    );
+
+    for (const b of stuck) {
+      if (liveIds.has(b.id)) continue;
+
+      const counts = await prisma.broadcastChat.groupBy({
+        by: ['status'],
+        where: { broadcastId: b.id },
+        _count: true,
+      });
+      const byStatus = new Map(counts.map((c) => [c.status, c._count]));
+      const pending = byStatus.get('pending') ?? 0;
+      const retrying = byStatus.get('retrying') ?? 0;
+
+      if (pending > 0) {
+        await queue.add(
+          'broadcast:send',
+          { broadcastId: b.id, organizationId: b.organizationId },
+          { jobId: `broadcast-stuck-${b.id}-${Date.now()}` },
+        );
+        log.info(`Re-enqueued stuck 'sending' broadcast ${b.id} (${pending} pending chat(s))`);
+      } else if (retrying > 0) {
+        await queue.add(
+          'broadcast:retry',
+          { broadcastId: b.id, organizationId: b.organizationId },
+          { jobId: `broadcast-stuck-retry-${b.id}-${Date.now()}` },
+        );
+        log.info(`Re-enqueued stuck retrying broadcast ${b.id} (${retrying} retrying chat(s))`);
+      } else {
+        // The worker died between the last send and finalize.
+        await finalizeBroadcast(b.id, b.organizationId);
+        log.info(`Finalized stuck broadcast ${b.id} (no pending work)`);
+      }
+    }
+
+    await queue.close();
+  } catch (err) {
+    log.error('Failed to recover stuck sending broadcasts', { error: String(err) });
+  }
+}
+
 // ─── Chat Sync Startup Recovery ───
 // On startup, find chats with pending/syncing/failed sync status and queue sync jobs.
 
@@ -1788,39 +1872,46 @@ async function runChatDiscovery(): Promise<void> {
         const newCount = fresh.length;
 
         // Keep DiscoveredChat in step so firstSeenAt stays stable for the UI.
-        await prisma.discoveredChat.deleteMany({
-          where: {
-            organizationId: integration.organizationId,
-            messenger: integration.messenger,
-            externalChatId: { notIn: fresh.map((c: { externalChatId: string }) => c.externalChatId) },
-          },
-        });
-        if (fresh.length > 0) {
-          await prisma.discoveredChat.createMany({
-            data: fresh.map((c: { externalChatId: string; name?: string }) => ({
+        // Transactional: a concurrent manual scan must never observe (or
+        // leave behind) a half-replaced set, which would reset firstSeenAt.
+        await prisma.$transaction(async (tx) => {
+          await tx.discoveredChat.deleteMany({
+            where: {
               organizationId: integration.organizationId,
               messenger: integration.messenger,
-              externalChatId: c.externalChatId,
-              name: c.name ?? null,
-            })),
-            skipDuplicates: true,
+              externalChatId: { notIn: fresh.map((c: { externalChatId: string }) => c.externalChatId) },
+            },
           });
-        }
+          if (fresh.length > 0) {
+            await tx.discoveredChat.createMany({
+              data: fresh.map((c: { externalChatId: string; name?: string }) => ({
+                organizationId: integration.organizationId,
+                messenger: integration.messenger,
+                externalChatId: c.externalChatId,
+                name: c.name ?? null,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        });
 
-        const org = await prisma.organization.findUnique({
-          where: { id: integration.organizationId },
-          select: { pendingImports: true },
-        });
-        const pending = (org?.pendingImports as Record<string, { count: number; at: string }> | null) ?? {};
+        // Atomic per-messenger jsonb update — concurrent scans for different
+        // messengers each touch only their own key instead of clobbering the
+        // whole object (mirrors apps/api/src/lib/pending-imports.ts).
         if (newCount > 0) {
-          pending[integration.messenger] = { count: newCount, at: new Date().toISOString() };
+          const entry = JSON.stringify({ count: newCount, at: new Date().toISOString() });
+          await prisma.$executeRaw`
+            UPDATE "Organization"
+            SET "pendingImports" = jsonb_set(COALESCE("pendingImports", '{}'::jsonb), ARRAY[${integration.messenger}], ${entry}::jsonb, true)
+            WHERE id = ${integration.organizationId}
+          `;
         } else {
-          delete pending[integration.messenger];
+          await prisma.$executeRaw`
+            UPDATE "Organization"
+            SET "pendingImports" = COALESCE("pendingImports", '{}'::jsonb) - ${integration.messenger}
+            WHERE id = ${integration.organizationId}
+          `;
         }
-        await prisma.organization.update({
-          where: { id: integration.organizationId },
-          data: { pendingImports: pending },
-        });
         log.info(`Chat discovery: ${integration.messenger} has ${newCount} new chat(s)`, { organizationId: integration.organizationId });
       } finally {
         try { await adapter.disconnect(); } catch { /* ignore */ }
@@ -1875,6 +1966,9 @@ setTimeout(() => {
   recoverOverdueScheduledBroadcasts().catch((err) => {
     log.error('Startup recovery error', { error: String(err) });
   });
+  recoverStuckSendingBroadcasts().catch((err) => {
+    log.error('Stuck sending recovery error', { error: String(err) });
+  });
   recoverPendingChatSyncs().catch((err) => {
     log.error('Chat sync recovery error', { error: String(err) });
   });
@@ -1915,15 +2009,22 @@ healthServer.listen(HEALTH_PORT, () => {
 async function shutdown(signal: string) {
   log.info(`Received ${signal}, shutting down gracefully`);
 
-  // Close health check server and workers (waits for active jobs to finish, up to 30s)
+  // Close health check server and workers. worker.close() waits for active
+  // jobs, but a broadcast batch can run for many minutes — far beyond the
+  // platform's SIGTERM→SIGKILL grace — so bound the drain: whatever doesn't
+  // finish is covered by the boot sweep + stuck-'sending' recovery.
   healthServer.close();
-  await Promise.allSettled([worker.close(), messageSyncWorker.close()]);
-  log.info('Workers closed');
+  const drain = Promise.allSettled([worker.close(), messageSyncWorker.close()]);
+  const timedOut = await Promise.race([
+    drain.then(() => false),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 25_000)),
+  ]);
+  log.info(timedOut ? 'Drain timed out after 25s — exiting anyway' : 'Workers closed');
 
   // Disconnect from databases
-  await prisma.$disconnect();
-  await pubClient.quit();
-  await connection.quit();
+  await prisma.$disconnect().catch(() => {});
+  await pubClient.quit().catch(() => {});
+  await connection.quit().catch(() => {});
 
   log.info('All connections closed');
   process.exit(0);
@@ -1931,3 +2032,13 @@ async function shutdown(signal: string) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// A single stray promise must not crash-loop the container mid-broadcast:
+// log loudly and keep running — job-level state (sending sweep, recovery)
+// keeps the data consistent either way.
+process.on('unhandledRejection', (reason) => {
+  log.error('Unhandled promise rejection', { error: String(reason) });
+});
+process.on('uncaughtException', (err) => {
+  log.error('Uncaught exception', { error: String(err), stack: err?.stack });
+});

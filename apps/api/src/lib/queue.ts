@@ -6,9 +6,14 @@ import IORedis from 'ioredis';
 // types stop matching even though the instance is runtime-compatible. The
 // cast keeps the shared connection while satisfying the type checker on a
 // non-deduped install (e.g. Railway's `npm i`).
-const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+const redisConnection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
-}) as unknown as ConnectionOptions;
+});
+// Without a listener a Redis blip is an unhandled 'error' event → process crash.
+redisConnection.on('error', (err) => {
+  console.error('[queue] Redis error:', err?.message ?? String(err));
+});
+const connection = redisConnection as unknown as ConnectionOptions;
 
 export const broadcastQueue = new Queue('broadcast', {
   connection,

@@ -35,8 +35,23 @@ import { repairDatabase } from './db-repair.js';
 
 const env = validateEnv();
 
-// Ensure critical DB columns exist (handles stuck migrations)
-await repairDatabase();
+// Ensure critical DB columns exist (handles stuck migrations). Retried with
+// backoff: during a deploy Postgres can be briefly unreachable, and a single
+// failed probe here would otherwise crash-loop the container.
+{
+  const BOOT_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= BOOT_ATTEMPTS; attempt++) {
+    try {
+      await repairDatabase();
+      break;
+    } catch (err) {
+      if (attempt === BOOT_ATTEMPTS) throw err;
+      const delayMs = attempt * 2000;
+      console.error(`[boot] repairDatabase failed (attempt ${attempt}/${BOOT_ATTEMPTS}), retrying in ${delayMs}ms:`, String(err));
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
 
 // ─── Create server ───
 
@@ -257,3 +272,12 @@ async function shutdown(signal: string) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// One stray promise must not take the whole API down (Node 20 terminates on
+// unhandled rejections by default). Log loudly and keep serving.
+process.on('unhandledRejection', (reason) => {
+  fastify.log.error({ err: reason }, 'Unhandled promise rejection');
+});
+process.on('uncaughtException', (err) => {
+  fastify.log.error({ err }, 'Uncaught exception');
+});

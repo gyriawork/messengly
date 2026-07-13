@@ -55,6 +55,8 @@ function getRedis(): IORedis {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
     });
+    // Unhandled 'error' events crash the process; ioredis reconnects itself.
+    redis.on('error', (err) => console.error('[telegram:redis] error:', err?.message ?? String(err)));
     redis.connect().catch(() => {});
   }
   return redis;

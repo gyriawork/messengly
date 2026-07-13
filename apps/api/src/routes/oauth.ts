@@ -21,6 +21,8 @@ function getRedis(): IORedis {
     redis = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
       maxRetriesPerRequest: null,
     });
+    // Unhandled 'error' events crash the process; ioredis reconnects itself.
+    redis.on('error', (err) => console.error('[oauth:redis] error:', err?.message ?? String(err)));
   }
   return redis;
 }

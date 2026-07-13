@@ -13,6 +13,9 @@ export function startRedisSubscriber(): IORedis {
 
   subscriber = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 
+  // Unhandled 'error' events crash the process; ioredis reconnects itself.
+  subscriber.on('error', (err) => console.error('[RedisSubscriber] error:', err?.message ?? String(err)));
+
   subscriber.subscribe('ws:events').catch((err) => {
     console.error('[RedisSubscriber] Failed to subscribe to ws:events:', err);
   });

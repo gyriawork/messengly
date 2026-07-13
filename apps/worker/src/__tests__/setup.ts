@@ -12,6 +12,8 @@ vi.mock('ioredis', () => {
     subscribe: vi.fn().mockResolvedValue(undefined),
     quit: vi.fn().mockResolvedValue('OK'),
     disconnect: vi.fn(),
+    on: vi.fn(), // error listeners are attached at module import
+    connect: vi.fn().mockResolvedValue(undefined),
     status: 'ready',
   }));
   return { default: MockRedis };
@@ -38,7 +40,8 @@ vi.mock('../lib/prisma.js', () => {
     default: {
       broadcast: {
         findFirst: vi.fn(),
-        findMany: vi.fn(),
+        // Startup recovery scans run at module import — must resolve.
+        findMany: vi.fn().mockResolvedValue([]),
         update: vi.fn(),
       },
       broadcastChat: {
@@ -46,6 +49,7 @@ vi.mock('../lib/prisma.js', () => {
         update: vi.fn(),
         // The startup sweep reads .count at module import — must resolve.
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        groupBy: vi.fn().mockResolvedValue([]),
       },
       integration: {
         findFirst: vi.fn(),
