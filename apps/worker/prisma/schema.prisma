@@ -29,6 +29,7 @@ model Organization {
   antibanSettings      AntibanSettings[]
   activityLogs         ActivityLog[]
   globalBroadcastLimits Json?   // max values admin can't exceed
+  pendingImports       Json?    // per-messenger count of discovered-but-not-imported chats: { [messenger]: { count, at } }
   wikiCategories       WikiCategory[]
   wikiArticles         WikiArticle[]
   wikiTags             WikiTag[]
@@ -102,6 +103,7 @@ model Chat {
   organization     Organization @relation(fields: [organizationId], references: [id])
   ownerId          String?
   owner            User?    @relation("ChatOwner", fields: [ownerId], references: [id])
+  ownerName        String?  // free-text owner label (replaces user-based owner)
   importedById     String
   importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
   messageCount     Int      @default(0)
@@ -109,6 +111,7 @@ model Chat {
   syncStatus       String   @default("pending") // pending | syncing | synced | failed
   syncCursor       String?  // adapter-specific pagination cursor for resumable sync
   hasFullHistory   Boolean  @default(false) // true once full message history has been pulled
+  missedScans      Int      @default(0) // consecutive reachability checks that missed this chat
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -160,6 +163,23 @@ model ChatParticipant {
 
   @@unique([chatId, externalUserId])
   @@index([chatId])
+}
+
+// ─── DISCOVERED CHATS ───
+// Chats a scan has seen that were never imported. Kept in sync on every scan:
+// rows appear when first discovered (firstSeenAt is stable across scans) and
+// disappear once the chat is imported or vanishes from the messenger.
+
+model DiscoveredChat {
+  id             String   @id @default(uuid())
+  organizationId String
+  messenger      String
+  externalChatId String
+  name           String?
+  firstSeenAt    DateTime @default(now())
+
+  @@unique([organizationId, messenger, externalChatId])
+  @@index([organizationId, messenger])
 }
 
 // ─── MESSAGES ───
@@ -254,6 +274,7 @@ model BroadcastChat {
   errorReason   String?
   retryCount    Int     @default(0)
   sentAt        DateTime?
+  updatedAt     DateTime @default(now()) @updatedAt // when the status last changed — timestamps the delivery log
 
   @@unique([broadcastId, chatId])
   @@index([status])
@@ -266,6 +287,7 @@ model Template {
   id             String   @id @default(uuid())
   name           String
   messageText    String
+  attachments    Json?    // optional files attached to the template, carried into broadcasts
   usageCount     Int      @default(0)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
