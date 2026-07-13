@@ -178,6 +178,17 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
+      // A soft-deleted account is gone — treat it as unknown credentials.
+      if (user.deletedAt) {
+        return reply.status(401).send({
+          error: {
+            code: 'AUTH_INVALID_CREDENTIALS',
+            message: 'Invalid email or password',
+            statusCode: 401,
+          },
+        });
+      }
+
       // Check user status
       if (user.status === 'deactivated') {
         return reply.status(403).send({

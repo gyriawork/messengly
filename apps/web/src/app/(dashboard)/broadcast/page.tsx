@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus,
   Send,
@@ -61,9 +61,16 @@ type SideView = 'none' | 'antiban';
 
 export default function BroadcastPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<BroadcastStatus | null>(null);
   const [search, setSearch] = useState('');
   const [sideView, setSideView] = useState<SideView>('none');
+
+  // Deep link from the broadcast wizard's limit warning: /broadcast?settings=antiban
+  // opens the settings panel straight away.
+  useEffect(() => {
+    if (searchParams.get('settings') === 'antiban') setSideView('antiban');
+  }, [searchParams]);
 
   const { data, isLoading } = useBroadcasts({
     status: activeTab,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,6 +20,7 @@ import {
   X,
   Paperclip,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -28,6 +30,7 @@ import {
   useUpdateBroadcast,
   useBroadcast,
   useSendBroadcast,
+  useAntibanSettings,
 } from '@/hooks/useBroadcasts';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useTags } from '@/hooks/useTags';
@@ -189,6 +192,26 @@ export function BroadcastWizard() {
     return groups;
   }, [selectedChats]);
 
+  // A broadcast is one day's send, so a messenger cannot deliver more than its
+  // daily anti-ban limit in one go — the rest would stall. Block the wizard
+  // until the operator raises the limit or trims recipients.
+  const { data: antibanData } = useAntibanSettings();
+  const dailyLimits = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const st of antibanData?.settings ?? []) map[st.messenger] = st.maxMessagesPerDay;
+    return map;
+  }, [antibanData]);
+  const overLimit = useMemo(() => {
+    const out: { messenger: string; count: number; limit: number }[] = [];
+    for (const [messenger, chats] of Object.entries(groupedSelected)) {
+      const limit = dailyLimits[messenger];
+      if (typeof limit === 'number' && chats.length > limit) {
+        out.push({ messenger, count: chats.length, limit });
+      }
+    }
+    return out;
+  }, [groupedSelected, dailyLimits]);
+
   async function handleNext() {
     if (step === 0) {
       const valid = await trigger(['name', 'messageText']);
@@ -196,6 +219,10 @@ export function BroadcastWizard() {
     } else if (step === 1) {
       const valid = await trigger(['chatIds']);
       if (!valid) return;
+      if (overLimit.length > 0) {
+        toast.error('Some messengers have more chats than their daily limit allows');
+        return;
+      }
     } else if (step === 2) {
       if (scheduleType === 'later') {
         const valid = await trigger(['scheduledAt']);
@@ -539,6 +566,35 @@ export function BroadcastWizard() {
 
             {errors.chatIds && (
               <p className="text-xs text-red-500">{errors.chatIds.message}</p>
+            )}
+
+            {overLimit.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <div className="text-xs text-amber-800">
+                    <p className="font-medium">Too many chats for the daily limit</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {overLimit.map((o) => (
+                        <li key={o.messenger}>
+                          <span className="font-medium">{messengerMeta[o.messenger]?.label ?? o.messenger}</span>:{" "}
+                          {o.count} selected, but only {o.limit}/day allowed
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5">
+                      Raise the daily limit in{" "}
+                      <Link
+                        href="/broadcast?settings=antiban"
+                        className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover"
+                      >
+                        Broadcast Settings
+                      </Link>{" "}
+                      or remove some recipients to continue.
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Search and filter */}
@@ -947,7 +1003,8 @@ export function BroadcastWizard() {
           ) : (
             <button
               onClick={handleNext}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
+              disabled={step === 1 && overLimit.length > 0}
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-50 disabled:hover:bg-accent"
             >
               Next
               <ArrowRight className="h-4 w-4" />

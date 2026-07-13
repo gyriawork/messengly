@@ -24,6 +24,7 @@ const inviteUserBodySchema = z.object({
 
 const updateUserBodySchema = z.object({
   name: z.string().min(1).max(200).trim().optional(),
+  email: z.string().email().max(320).trim().toLowerCase().optional(),
   role: z.enum(['superadmin', 'admin', 'user']).optional(),
   status: z.enum(['active', 'deactivated']).optional(),
   password: z.string().min(8).max(128).optional(),
@@ -192,7 +193,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         targetOrgId = request.user.organizationId;
       }
 
-      const where: Record<string, unknown> = {};
+      const where: Record<string, unknown> = { deletedAt: null };
 
       if (targetOrgId) {
         where.organizationId = targetOrgId;
@@ -332,6 +333,14 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         }
       }
 
+      // A new email must be free.
+      if (data.email && data.email !== targetUser.email) {
+        const clash = await prisma.user.findUnique({ where: { email: data.email } });
+        if (clash) {
+          return sendError(reply, 'VALIDATION_ERROR', `Email ${data.email} is already in use`, 422);
+        }
+      }
+
       // The password arrives plain and is only ever stored as a hash.
       const { password, ...fields } = data;
       const updateData: Record<string, unknown> = { ...fields };
@@ -345,6 +354,46 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
       });
 
       return reply.send(sanitizeUser(updated));
+    },
+  );
+
+  // ─── DELETE /api/users/:id ───
+  // Superadmin-only. Soft-deletes: the row is kept (its broadcasts/chats still
+  // reference it) but the account can no longer sign in, and its email is
+  // released so the address can be reused for a fresh account.
+  fastify.delete(
+    '/:id',
+    { preHandler: [authenticate, requireMinRole('superadmin')] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = userIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid user id', 422);
+      }
+      const { id } = paramsParsed.data;
+
+      if (id === request.user.id) {
+        return sendError(reply, 'VALIDATION_ERROR', 'You cannot delete your own account', 422);
+      }
+
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (!target || target.deletedAt) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `User with id ${id} not found`, 404);
+      }
+
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id },
+          data: {
+            deletedAt: new Date(),
+            status: 'deactivated',
+            // Free the address (email is unique) so it can be re-used later.
+            email: `deleted+${Date.now()}+${target.email}`.slice(0, 320),
+          },
+        }),
+        prisma.refreshToken.deleteMany({ where: { userId: id } }),
+      ]);
+
+      return reply.status(204).send();
     },
   );
 }

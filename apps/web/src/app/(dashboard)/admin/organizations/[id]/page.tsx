@@ -13,6 +13,8 @@ import {
   Loader2,
   Ban,
   CheckCircle2,
+  Trash2,
+  Power,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -66,15 +68,31 @@ export default function OrganizationSettingsPage() {
   const updateOrg = useUpdateOrganization();
 
   const updateUser = useMutation({
-    mutationFn: ({ userId, ...data }: { userId: string; name?: string; password?: string }) =>
+    mutationFn: ({ userId, ...data }: { userId: string; name?: string; email?: string; password?: string; status?: string }) =>
       api.patch(`/api/users/${userId}`, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['org-users', id] }),
   });
+
+  const deleteUser = useMutation({
+    mutationFn: (userId: string) => api.delete(`/api/users/${userId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['org-users', id] }),
+  });
+
+  const toggleUserStatus = (u: OrgUser) =>
+    updateUser.mutate(
+      { userId: u.id, status: u.status === 'active' ? 'deactivated' : 'active' },
+      {
+        onSuccess: () =>
+          toast.success(u.status === 'active' ? `${u.name} deactivated` : `${u.name} activated`),
+        onError: (err) => toast.error(humanizeError(err, 'Failed to update user')),
+      },
+    );
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [confirmSuspend, setConfirmSuspend] = useState(false);
   const [editingUser, setEditingUser] = useState<OrgUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState<OrgUser | null>(null);
 
   if (me?.role !== 'superadmin') {
     return (
@@ -250,7 +268,7 @@ export default function OrganizationSettingsPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-1 text-base font-semibold text-slate-900">Users</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Everyone in this organization. You can rename anyone and set a new password.
+          Everyone in this organization. Rename, change email or password, activate/deactivate, or remove.
         </p>
 
         {usersLoading ? (
@@ -303,11 +321,31 @@ export default function OrganizationSettingsPage() {
                     <td className="px-3 py-2.5 text-sm text-slate-500">
                       {u.lastActiveAt ? formatDate(u.lastActiveAt) : '—'}
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setEditingUser(u)}>
-                        <KeyRound className="h-3.5 w-3.5" />
-                        Edit
-                      </Button>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleUserStatus(u)}
+                          title={u.status === 'active' ? 'Deactivate' : 'Activate'}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                          {u.status === 'active' ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setEditingUser(u)}>
+                          <KeyRound className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                        {u.id !== me?.id && (
+                          <button
+                            onClick={() => setDeletingUser(u)}
+                            title="Delete user"
+                            className="rounded p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -340,6 +378,42 @@ export default function OrganizationSettingsPage() {
               onClick={() => setStatus('suspended')}
             >
               Suspend
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete user */}
+      {deletingUser && (
+        <Modal
+          title={`Delete ${deletingUser.name}?`}
+          subtitle={deletingUser.email}
+          onClose={() => setDeletingUser(null)}
+        >
+          <p className="text-sm text-slate-600">
+            This user will no longer be able to sign in, and their email is freed
+            up so it can be used for a new account. Their broadcasts and imported
+            chats stay in place.
+          </p>
+          <div className="mt-5 flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setDeletingUser(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              loading={deleteUser.isPending}
+              onClick={() =>
+                deleteUser.mutate(deletingUser.id, {
+                  onSuccess: () => {
+                    toast.success(`${deletingUser.name} deleted`);
+                    setDeletingUser(null);
+                  },
+                  onError: (err) => toast.error(humanizeError(err, 'Failed to delete user')),
+                })
+              }
+            >
+              Delete
             </Button>
           </div>
         </Modal>
@@ -378,18 +452,24 @@ function EditUserModal({
   user: OrgUser;
   isPending: boolean;
   onClose: () => void;
-  onSubmit: (data: { name?: string; password?: string }) => void;
+  onSubmit: (data: { name?: string; email?: string; password?: string }) => void;
 }) {
   const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [password, setPassword] = useState('');
 
+  const emailValid = /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim());
   const passwordTooShort = password.length > 0 && password.length < 8;
-  const nothingChanged = name.trim() === user.name && password.length === 0;
+  const nothingChanged =
+    name.trim() === user.name &&
+    email.trim() === user.email &&
+    password.length === 0;
 
   const submit = () => {
-    if (passwordTooShort || nothingChanged) return;
-    const data: { name?: string; password?: string } = {};
+    if (passwordTooShort || nothingChanged || !emailValid) return;
+    const data: { name?: string; email?: string; password?: string } = {};
     if (name.trim() && name.trim() !== user.name) data.name = name.trim();
+    if (email.trim() && email.trim() !== user.email) data.email = email.trim().toLowerCase();
     if (password) data.password = password;
     onSubmit(data);
   };
@@ -404,6 +484,21 @@ function EditUserModal({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={cn(
+              'w-full rounded-lg border-[1.5px] px-3 py-2 text-sm focus:outline-none focus:ring-2',
+              email.trim() && !emailValid
+                ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
+                : 'border-slate-200 focus:border-accent focus:ring-accent/15',
+            )}
+          />
+          <p className="mt-1 text-xs text-slate-400">The address this person signs in with.</p>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">New password</label>
@@ -430,7 +525,7 @@ function EditUserModal({
           <Button
             className="flex-1"
             loading={isPending}
-            disabled={nothingChanged || passwordTooShort}
+            disabled={nothingChanged || passwordTooShort || !emailValid}
             onClick={submit}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
