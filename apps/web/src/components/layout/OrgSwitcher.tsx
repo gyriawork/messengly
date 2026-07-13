@@ -30,7 +30,7 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
       clearOrg();
     } else {
       const org = organizations.find((o) => o.id === orgId);
-      if (org) setOrg(org.id, org.name);
+      if (org) setOrg(org.id, org.name, (org as { logo?: string | null }).logo ?? null);
     }
     queryClient.resetQueries();
   };

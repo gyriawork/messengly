@@ -33,7 +33,7 @@ const tabs = [
 const moreItems = [
   { icon: FileText, href: '/templates', label: 'Templates' },
   { icon: BookOpen, href: '/wiki', label: 'Wiki' },
-  { icon: Tag, href: '/tags', label: 'Tags' },
+  { icon: Tag, href: '/tags', label: 'Labels' },
   { icon: Activity, href: '/activity', label: 'Activity' },
   { icon: Settings, href: '/settings', label: 'Settings' },
 ];

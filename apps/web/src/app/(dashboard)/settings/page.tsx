@@ -8,14 +8,16 @@ import { cn } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import { WorkspaceTab } from '@/components/settings/WorkspaceTab';
 import { ProfileTab } from '@/components/settings/ProfileTab';
+import { OrganizationTab } from '@/components/settings/OrganizationTab';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
 
-type Tab = 'integrations' | 'workspace' | 'profile';
+type Tab = 'integrations' | 'workspace' | 'organization' | 'profile';
 
 const ALL_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'integrations', label: 'Integrations', icon: Settings },
   { id: 'workspace', label: 'Workspace', icon: Building2 },
+  { id: 'organization', label: 'Organization', icon: Building2 },
   { id: 'profile', label: 'Profile', icon: User },
 ];
 
@@ -40,11 +42,15 @@ export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
 
   // Only the superadmin manages messenger integrations and the workspace.
-  // Regular users (broadcasters) get the Profile tab only.
+  // Org admins can brand their organization; everyone gets the Profile tab.
   const isSuperadmin = user?.role === 'superadmin';
-  const tabs = isSuperadmin
-    ? ALL_TABS
-    : ALL_TABS.filter((t) => t.id === 'profile');
+  const isAdmin = user?.role === 'admin';
+  const canBrand = isSuperadmin || isAdmin;
+  const tabs = ALL_TABS.filter((t) => {
+    if (t.id === 'profile') return true;
+    if (t.id === 'organization') return canBrand;
+    return isSuperadmin; // integrations, workspace
+  });
 
   // Keep the active tab valid when the role-filtered tab set changes.
   useEffect(() => {
@@ -116,6 +122,7 @@ export default function SettingsPage() {
           />
         )}
         {activeTab === 'workspace' && isSuperadmin && <WorkspaceTab />}
+        {activeTab === 'organization' && canBrand && <OrganizationTab />}
         {activeTab === 'profile' && <ProfileTab />}
       </div>
     </div>

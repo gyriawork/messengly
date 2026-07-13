@@ -12,6 +12,8 @@ interface User {
   role: string;
   organizationId: string | null;
   avatar?: string | null;
+  /** The user's org name + logo, used to brand the sidebar footer. */
+  organization?: { id: string; name: string; logo: string | null } | null;
 }
 
 interface AuthState {

@@ -309,7 +309,7 @@ function BulkActions({
           className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
         >
           <Tag className="h-3.5 w-3.5" />
-          Add Tag
+          Add Label
         </button>
         {showTagMenu && (
           <AddTagDropdown
@@ -1085,7 +1085,7 @@ export default function ChatsPage() {
                   Owner
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Tags
+                  Labels
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
                   Date Created

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
+import { useSuperadminStore } from '@/stores/superadmin';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from './OrgSwitcher';
 
@@ -61,6 +62,13 @@ export function Sidebar() {
         .toUpperCase()
         .slice(0, 2)
     : '?';
+
+  // Footer avatar branding: a superadmin's context is the org picked in the
+  // switcher; everyone else uses their own org. The avatar shows the company
+  // logo when set, otherwise the user's initials.
+  const selectedOrgLogo = useSuperadminStore((s) => s.selectedOrgLogo);
+  const isSuperadmin = user?.role === 'superadmin';
+  const orgLogo = isSuperadmin ? selectedOrgLogo : user?.organization?.logo ?? null;
 
   return (
     <aside
@@ -166,7 +174,7 @@ export function Sidebar() {
         );
       })()}
 
-      {/* Bottom: User info + Logout */}
+      {/* Bottom: company logo (or user initials) + user + logout */}
       <div
         className={cn(
           'flex items-center border-t border-white/10 pt-3',
@@ -174,10 +182,14 @@ export function Sidebar() {
         )}
       >
         <div
-          title={collapsed ? (user?.name || 'User') : undefined}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-avatar bg-white/15 text-sm font-medium text-white"
+          title={collapsed ? user?.name || 'User' : undefined}
+          className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-avatar bg-white/15 text-sm font-medium text-white"
         >
-          {initials}
+          {orgLogo ? (
+            <img src={orgLogo} alt="" className="h-full w-full object-contain" />
+          ) : (
+            initials
+          )}
         </div>
         {!collapsed && (
           <>

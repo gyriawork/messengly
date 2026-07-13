@@ -335,7 +335,7 @@ export function ChatList() {
                 onChange={(e) => setTagFilter(e.target.value || null)}
                 className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 outline-none transition-colors focus:border-accent focus:bg-white"
               >
-                <option value="">All Tags</option>
+                <option value="">All Labels</option>
                 {tags.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}

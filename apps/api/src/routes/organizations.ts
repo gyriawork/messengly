@@ -4,7 +4,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireRole } from '../middleware/rbac.js';
+import { requireRole, requireOrganization, getOrgId } from '../middleware/rbac.js';
 
 // ─── Zod Schemas ───
 
@@ -24,6 +24,14 @@ const updateOrgBodySchema = z.object({
   name: z.string().min(1).max(200).trim().optional(),
   status: z.enum(['active', 'suspended']).optional(),
   globalBroadcastLimits: z.record(z.unknown()).nullable().optional(),
+});
+
+// The current-org update an org admin may perform on their own org (branding).
+// The logo is a small data-URI (client resizes it to a square), so cap length
+// well above a 128px PNG (~20KB) but low enough to reject full-size uploads.
+const updateCurrentOrgBodySchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  logo: z.string().max(300_000).nullable().optional(),
 });
 
 const orgIdParamSchema = z.object({
@@ -60,6 +68,51 @@ function sanitizeUser(user: { id: string; email: string; name: string; role: str
 export default async function organizationRoutes(fastify: FastifyInstance): Promise<void> {
   const superadminPreHandlers = [authenticate, requireRole('superadmin')];
 
+  // ─── PATCH /api/organizations/current ───
+  // An org admin edits their OWN organization's branding (logo + name). For a
+  // superadmin this targets the org selected in the sidebar (getOrgId reads the
+  // injected organizationId query param). Regular members are not allowed.
+  fastify.patch(
+    '/current',
+    { preHandler: [authenticate, requireRole('admin', 'superadmin'), requireOrganization()] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const orgId = getOrgId(request);
+      if (!orgId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const parsed = updateCurrentOrgBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+          422,
+        );
+      }
+
+      const { name, logo } = parsed.data;
+      const updateData: Prisma.OrganizationUpdateInput = {};
+      if (name !== undefined) updateData.name = name;
+      if (logo !== undefined) updateData.logo = logo; // null clears the logo
+
+      if (Object.keys(updateData).length === 0) {
+        return sendError(reply, 'VALIDATION_ERROR', 'At least one field must be provided', 422);
+      }
+
+      try {
+        const updated = await prisma.organization.update({
+          where: { id: orgId },
+          data: updateData,
+          select: { id: true, name: true, logo: true },
+        });
+        return reply.send({ organization: updated });
+      } catch {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Organization not found', 404);
+      }
+    },
+  );
+
   // ─── GET /api/organizations ───
 
   fastify.get(
@@ -85,7 +138,13 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
         where,
         include: {
           _count: {
-            select: { users: true, chats: true, broadcasts: true },
+            select: {
+              // Count only real members: soft-deleted users and platform-level
+              // superadmins are not org members (matches the members list).
+              users: { where: { deletedAt: null, role: { not: 'superadmin' } } },
+              chats: true,
+              broadcasts: true,
+            },
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -244,7 +303,8 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
       }
 
       const [userCount, chatCount, broadcastCount, integrationCount] = await Promise.all([
-        prisma.user.count({ where: { organizationId: id } }),
+        // Real members only — exclude soft-deleted users and superadmins.
+        prisma.user.count({ where: { organizationId: id, deletedAt: null, role: { not: 'superadmin' } } }),
         prisma.chat.count({ where: { organizationId: id } }),
         prisma.broadcast.count({ where: { organizationId: id } }),
         prisma.integration.count({ where: { organizationId: id } }),
