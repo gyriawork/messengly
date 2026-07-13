@@ -26,6 +26,7 @@ const updateUserBodySchema = z.object({
   name: z.string().min(1).max(200).trim().optional(),
   role: z.enum(['superadmin', 'admin', 'user']).optional(),
   status: z.enum(['active', 'deactivated']).optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 
 const updateProfileBodySchema = z.object({
@@ -331,9 +332,16 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         }
       }
 
+      // The password arrives plain and is only ever stored as a hash.
+      const { password, ...fields } = data;
+      const updateData: Record<string, unknown> = { ...fields };
+      if (password) {
+        updateData.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      }
+
       const updated = await prisma.user.update({
         where: { id },
-        data,
+        data: updateData,
       });
 
       return reply.send(sanitizeUser(updated));

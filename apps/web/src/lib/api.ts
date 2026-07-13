@@ -16,6 +16,9 @@ function injectOrgId(endpoint: string): string {
     if (user.role !== 'superadmin') return endpoint;
   } catch { return endpoint; }
   if (ORG_PARAM_EXCLUDE.some((prefix) => endpoint.startsWith(prefix))) return endpoint;
+  // An explicit organizationId in the call wins over the sidebar selection —
+  // admin pages inspect orgs other than the selected one.
+  if (endpoint.includes('organizationId=')) return endpoint;
   const separator = endpoint.includes('?') ? '&' : '?';
   return `${endpoint}${separator}organizationId=${encodeURIComponent(orgId)}`;
 }

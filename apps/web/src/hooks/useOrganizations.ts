@@ -25,10 +25,7 @@ export interface OrganizationStats {
   integrationCount: number;
 }
 
-interface OrganizationsResponse {
-  organizations: Organization[];
-  total: number;
-}
+
 
 interface CreateOrganizationInput {
   name: string;
@@ -45,8 +42,9 @@ interface UpdateOrganizationInput {
 
 export function useOrganizations() {
   return useQuery({
+    // GET /api/organizations returns a bare array.
     queryKey: ['organizations'],
-    queryFn: () => api.get<OrganizationsResponse>('/api/organizations'),
+    queryFn: () => api.get<Organization[]>('/api/organizations'),
   });
 }
 

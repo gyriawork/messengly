@@ -189,6 +189,24 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
+      // A suspended organization locks out its members entirely; superadmin
+      // must still get in to lift the suspension.
+      if (user.role !== 'superadmin' && user.organizationId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: user.organizationId },
+          select: { status: true },
+        });
+        if (org?.status === 'suspended') {
+          return reply.status(403).send({
+            error: {
+              code: 'ORG_SUSPENDED',
+              message: 'This platform is currently unavailable. Please contact us.',
+              statusCode: 403,
+            },
+          });
+        }
+      }
+
       // Update lastActiveAt
       await prisma.user.update({
         where: { id: user.id },

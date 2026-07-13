@@ -69,7 +69,7 @@ export default function AdminPage() {
     );
   }
 
-  const organizations = data?.organizations || [];
+  const organizations = data ?? [];
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
@@ -164,7 +164,8 @@ export default function AdminPage() {
               {organizations.map((org) => (
                 <tr
                   key={org.id}
-                  className="border-b border-slate-50 transition-colors hover:bg-slate-50/50"
+                  onClick={() => router.push(`/admin/organizations/${org.id}`)}
+                  className="cursor-pointer border-b border-slate-50 transition-colors hover:bg-slate-50/50"
                 >
                   <td className="px-4 py-3">
                     <span className="text-sm font-medium text-slate-900">
@@ -198,15 +199,16 @@ export default function AdminPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => setEditingOrg(org)}
+                        onClick={(e) => { e.stopPropagation(); setEditingOrg(org); }}
                         className="rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent-bg"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() =>
-                          setStatsOrgId(statsOrgId === org.id ? undefined : org.id)
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStatsOrgId(statsOrgId === org.id ? undefined : org.id);
+                        }}
                         className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
                       >
                         <BarChart3 className="h-3.5 w-3.5" />

@@ -85,7 +85,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
         where,
         include: {
           _count: {
-            select: { users: true },
+            select: { users: true, chats: true, broadcasts: true },
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -101,6 +101,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
         status: org.status,
         globalBroadcastLimits: org.globalBroadcastLimits,
         userCount: org._count.users,
+        _count: org._count,
         createdAt: org.createdAt,
         updatedAt: org.updatedAt,
       }));
