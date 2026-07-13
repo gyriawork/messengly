@@ -5,6 +5,41 @@ export interface PendingImports {
 }
 
 /**
+ * Sync the DiscoveredChat rows for one messenger with the latest scan: chats
+ * seen now keep their original firstSeenAt, brand-new ones get a row, and
+ * anything no longer in the scan (imported or gone) is dropped. Returns a
+ * map externalChatId → firstSeenAt for the current pending set.
+ */
+export async function syncDiscoveredChats(
+  organizationId: string,
+  messenger: string,
+  pendingChats: Array<{ externalChatId: string; name?: string }>,
+): Promise<Record<string, string>> {
+  const ids = pendingChats.map((c) => c.externalChatId);
+
+  await prisma.discoveredChat.deleteMany({
+    where: { organizationId, messenger, externalChatId: { notIn: ids } },
+  });
+  if (pendingChats.length > 0) {
+    await prisma.discoveredChat.createMany({
+      data: pendingChats.map((c) => ({
+        organizationId,
+        messenger,
+        externalChatId: c.externalChatId,
+        name: c.name ?? null,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  const rows = await prisma.discoveredChat.findMany({
+    where: { organizationId, messenger },
+    select: { externalChatId: true, firstSeenAt: true },
+  });
+  return Object.fromEntries(rows.map((r) => [r.externalChatId, r.firstSeenAt.toISOString()]));
+}
+
+/**
  * Record how many discovered-but-not-imported chats a messenger has, feeding
  * the "new chats pending" banner. Merges per messenger; a zero clears it.
  */

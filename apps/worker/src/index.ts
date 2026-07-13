@@ -1784,7 +1784,28 @@ async function runChatDiscovery(): Promise<void> {
           select: { externalChatId: true },
         });
         const importedIds = new Set(imported.map((c) => c.externalChatId));
-        const newCount = scanned.filter((c: { externalChatId: string }) => !importedIds.has(c.externalChatId)).length;
+        const fresh = scanned.filter((c: { externalChatId: string; name?: string }) => !importedIds.has(c.externalChatId));
+        const newCount = fresh.length;
+
+        // Keep DiscoveredChat in step so firstSeenAt stays stable for the UI.
+        await prisma.discoveredChat.deleteMany({
+          where: {
+            organizationId: integration.organizationId,
+            messenger: integration.messenger,
+            externalChatId: { notIn: fresh.map((c: { externalChatId: string }) => c.externalChatId) },
+          },
+        });
+        if (fresh.length > 0) {
+          await prisma.discoveredChat.createMany({
+            data: fresh.map((c: { externalChatId: string; name?: string }) => ({
+              organizationId: integration.organizationId,
+              messenger: integration.messenger,
+              externalChatId: c.externalChatId,
+              name: c.name ?? null,
+            })),
+            skipDuplicates: true,
+          });
+        }
 
         const org = await prisma.organization.findUnique({
           where: { id: integration.organizationId },

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -19,6 +18,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from './OrgSwitcher';
 
@@ -45,7 +45,8 @@ export function Sidebar() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const setCollapsed = useUiStore((s) => s.setSidebarCollapsed);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';

@@ -8,7 +8,7 @@ import { messageSyncQueue } from '../lib/queue.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
-import { setPendingImports, type PendingImports } from '../lib/pending-imports.js';
+import { setPendingImports, syncDiscoveredChats, type PendingImports } from '../lib/pending-imports.js';
 import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
@@ -830,8 +830,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         // The same scan tells us how many chats exist that were never
         // imported — that feeds the "new chats pending" banner.
         const importedIds = new Set(chats.map((c) => c.externalChatId));
-        const newCount = [...reachable].filter((extId) => !importedIds.has(extId)).length;
-        await setPendingImports(organizationId, messenger, newCount);
+        const newIds = [...reachable].filter((extId) => !importedIds.has(extId));
+        await setPendingImports(organizationId, messenger, newIds.length);
+        await syncDiscoveredChats(organizationId, messenger, newIds.map((externalChatId) => ({ externalChatId })));
 
         const activateIds = chats
           .filter((c) => c.status === 'inactive' && reachable.has(c.externalChatId))

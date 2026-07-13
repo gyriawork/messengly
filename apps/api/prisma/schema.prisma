@@ -165,6 +165,23 @@ model ChatParticipant {
   @@index([chatId])
 }
 
+// ─── DISCOVERED CHATS ───
+// Chats a scan has seen that were never imported. Kept in sync on every scan:
+// rows appear when first discovered (firstSeenAt is stable across scans) and
+// disappear once the chat is imported or vanishes from the messenger.
+
+model DiscoveredChat {
+  id             String   @id @default(uuid())
+  organizationId String
+  messenger      String
+  externalChatId String
+  name           String?
+  firstSeenAt    DateTime @default(now())
+
+  @@unique([organizationId, messenger, externalChatId])
+  @@index([organizationId, messenger])
+}
+
 // ─── MESSAGES ───
 
 model Message {

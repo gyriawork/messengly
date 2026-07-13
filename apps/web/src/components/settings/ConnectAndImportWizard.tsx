@@ -10,13 +10,15 @@ import {
   ArrowLeft,
   Download,
   MessageSquare,
+  CalendarClock,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { humanizeError } from '@/lib/errors';
+import { formatDate } from '@/lib/dates';
 import { api } from '@/lib/api';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getSocket } from '@/hooks/useSocket';
+import { useUiStore } from '@/stores/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import type { MessengerType } from '@/types/integration';
 
@@ -26,6 +28,17 @@ interface ExternalChat {
   externalChatId: string;
   name: string;
   chatType: string;
+  /** When a scan first saw this chat. Lets us flag freshly found chats. */
+  firstSeenAt?: string | null;
+}
+
+// A chat first seen within this window is treated as "found by the latest
+// update" and highlighted so old, long-ignored chats stand apart from new ones.
+const NEW_CHAT_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+function isRecentlyDiscovered(firstSeenAt?: string | null): boolean {
+  if (!firstSeenAt) return false;
+  return Date.now() - new Date(firstSeenAt).getTime() < NEW_CHAT_WINDOW_MS;
 }
 
 interface ImportProgress {
@@ -66,13 +79,19 @@ function ChatSelector({
     ? chats.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
     : chats;
 
+  // Show the chats the latest scan just found at the very top (newest discovery
+  // first) so genuinely new chats stand apart from ones seen on earlier scans;
+  // fall back to chat type for anything without a discovery date.
   const typeOrder: Record<string, number> = { channel: 0, group: 1, direct: 2 };
-  const sorted = [...filtered].sort(
-    (a, b) => (typeOrder[a.chatType] ?? 3) - (typeOrder[b.chatType] ?? 3),
-  );
+  const sorted = [...filtered].sort((a, b) => {
+    const at = a.firstSeenAt ? new Date(a.firstSeenAt).getTime() : 0;
+    const bt = b.firstSeenAt ? new Date(b.firstSeenAt).getTime() : 0;
+    if (at !== bt) return bt - at;
+    return (typeOrder[a.chatType] ?? 3) - (typeOrder[b.chatType] ?? 3);
+  });
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* Search + Select controls */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -111,7 +130,7 @@ function ChatSelector({
       </div>
 
       {/* Chat list */}
-      <div className="max-h-[340px] overflow-y-auto rounded-lg border border-slate-200">
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-200">
         {sorted.length === 0 && (
           <p className="p-4 text-center text-sm text-slate-400">
             {chats.length === 0
@@ -121,6 +140,7 @@ function ChatSelector({
         )}
         {sorted.map((chat) => {
           const isSelected = selected.has(chat.externalChatId);
+          const isNew = isRecentlyDiscovered(chat.firstSeenAt);
           return (
             <label
               key={chat.externalChatId}
@@ -138,7 +158,24 @@ function ChatSelector({
               <div className="flex flex-1 items-center gap-2 overflow-hidden">
                 <MessageSquare className="h-4 w-4 shrink-0 text-slate-400" />
                 <span className="truncate text-sm text-slate-700">{chat.name}</span>
+                {isNew && (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    New
+                  </span>
+                )}
               </div>
+              {chat.firstSeenAt && (
+                <span
+                  title={`Found by a scan on ${formatDate(chat.firstSeenAt)}`}
+                  className={cn(
+                    'hidden shrink-0 items-center gap-1 text-[11px] tabular-nums sm:flex',
+                    isNew ? 'font-medium text-emerald-600' : 'text-slate-400',
+                  )}
+                >
+                  <CalendarClock className="h-3 w-3" />
+                  {formatDate(chat.firstSeenAt)}
+                </span>
+              )}
               <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                 {chat.chatType}
               </span>
@@ -208,6 +245,23 @@ export function ConnectAndImportWizard({
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const importingRef = useRef(false);
+
+  // Full-window layout that leaves the sidebar visible and clickable. On desktop
+  // the panel starts where the main content card starts (shell padding + sidebar
+  // width + gap); on mobile the sidebar is hidden, so it just insets from edges.
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  // md shell: p-3 (12) + sidebar (240 expanded / 64 collapsed) + gap-3 (12).
+  const leftOffset = isDesktop ? (sidebarCollapsed ? 88 : 264) : undefined;
 
   // ── Load chat list ──
   const loadChats = useCallback(async () => {
@@ -321,10 +375,14 @@ export function ConnectAndImportWizard({
 
   // ── Render ──
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
-      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-lg md:rounded-xl">
+    <div
+      className="fixed inset-2.5 z-50 flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10 motion-safe:animate-modal-in md:inset-3"
+      style={leftOffset != null ? { left: leftOffset } : undefined}
+      role="dialog"
+      aria-modal="true"
+    >
         {/* Header */}
-        <div className="mb-5 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4 md:px-8 md:py-5">
           <div className="flex items-center gap-3">
             <MessengerIcon messenger={messenger} size={40} />
             <div>
@@ -358,7 +416,7 @@ export function ConnectAndImportWizard({
 
         {/* Step indicator */}
         {step !== 'error' && (
-          <div className="mb-5 flex items-center gap-2">
+          <div className="mx-auto flex w-full max-w-2xl shrink-0 items-center gap-2 px-5 py-3 md:px-8">
             {['credentials', 'selecting', 'importing'].map((s, i) => {
               const stepNames = ['Connect', 'Select Chats', 'Import'];
               const stepKeys = ['credentials', 'selecting', 'importing'];
@@ -388,14 +446,19 @@ export function ConnectAndImportWizard({
           </div>
         )}
 
-        {/* Each step body remounts on step change; key restarts the slide-in. */}
-        <div key={step} className="motion-safe:animate-step-in">
+        {/* Body — fills the panel; key remounts on step change to restart the slide-in. */}
+        <div
+          key={step}
+          className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-5 pb-5 pt-2 motion-safe:animate-step-in md:px-8 md:pb-8"
+        >
         {/* ── Step: Credentials ── */}
-        {step === 'credentials' && renderCredentialsForm?.(handleCredentialsSuccess)}
+        {step === 'credentials' && (
+          <div className="my-auto w-full">{renderCredentialsForm?.(handleCredentialsSuccess)}</div>
+        )}
 
         {/* ── Step: Loading chats ── */}
         {step === 'loading-chats' && (
-          <div className="flex flex-col items-center gap-3 py-10">
+          <div className="my-auto flex flex-col items-center gap-3 py-10">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="text-sm text-slate-600">Loading {messengerName} chats...</p>
           </div>
@@ -411,7 +474,7 @@ export function ConnectAndImportWizard({
               onSelectAll={selectAll}
               onDeselectAll={deselectAll}
             />
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex shrink-0 gap-2">
               {!isAlreadyConnected && (
                 <button
                   onClick={() => setStep('credentials')}
@@ -441,12 +504,14 @@ export function ConnectAndImportWizard({
 
         {/* ── Step: Importing ── */}
         {step === 'importing' && (
-          <ImportProgressView progress={progress} messenger={messenger} />
+          <div className="my-auto w-full">
+            <ImportProgressView progress={progress} messenger={messenger} />
+          </div>
         )}
 
         {/* ── Step: Done ── */}
         {step === 'done' && importResult && (
-          <div className="flex flex-col items-center gap-4 py-6">
+          <div className="my-auto flex flex-col items-center gap-4 py-6">
             <CheckCircle2 className="h-14 w-14 text-emerald-500" />
             <div className="text-center">
               <p className="text-lg font-semibold text-slate-900">
@@ -484,7 +549,7 @@ export function ConnectAndImportWizard({
 
         {/* ── Step: Error ── */}
         {step === 'error' && (
-          <div className="flex flex-col items-center gap-4 py-6">
+          <div className="my-auto flex flex-col items-center gap-4 py-6">
             <div className="rounded-full bg-red-50 p-3">
               <X className="h-8 w-8 text-red-500" />
             </div>
@@ -506,7 +571,6 @@ export function ConnectAndImportWizard({
           </div>
         )}
         </div>
-      </div>
     </div>
   );
 }
