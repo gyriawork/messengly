@@ -458,7 +458,7 @@ function EditUserModal({
   const [email, setEmail] = useState(user.email);
   const [password, setPassword] = useState('');
 
-  const emailValid = /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim());
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const passwordTooShort = password.length > 0 && password.length < 8;
   const nothingChanged =
     name.trim() === user.name &&

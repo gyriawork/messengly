@@ -5,6 +5,16 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
+import { redisIncr, redisTtl, redisSetFlag, redisExists, redisDel } from '../lib/cache.js';
+
+// ─── Login brute-force lockout ───
+// Per-account: after MAX_LOGIN_FAILS wrong passwords, the account is locked for
+// LOGIN_LOCK_SECONDS. Tracked in Redis (keyed by email) so it survives restarts
+// and needs no schema change. This is separate from the per-IP rate limit.
+const MAX_LOGIN_FAILS = 3;
+const LOGIN_LOCK_SECONDS = 24 * 60 * 60; // 24 hours
+const failKeyFor = (email: string) => `login:fail:${email.toLowerCase()}`;
+const lockKeyFor = (email: string) => `login:lock:${email.toLowerCase()}`;
 
 // ─── Env helpers ───
 
@@ -154,9 +164,49 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
 
       const { email, password } = parsed.data;
 
-      // Find user
+      // Already locked from earlier failures? Refuse before touching the DB.
+      const lockKey = lockKeyFor(email);
+      const failKey = failKeyFor(email);
+      if (await redisExists(lockKey)) {
+        const ttl = await redisTtl(lockKey);
+        const hours = Math.max(1, Math.ceil(ttl / 3600));
+        return reply.status(429).send({
+          error: {
+            code: 'AUTH_LOCKED',
+            message: `Too many failed attempts. This account is locked for ${hours} more hour${hours === 1 ? '' : 's'}.`,
+            statusCode: 429,
+          },
+        });
+      }
+
+      // Records a failed attempt; locks the account once the limit is hit.
+      // Returns true if this failure triggered the lock.
+      const registerFailure = async (): Promise<boolean> => {
+        const fails = await redisIncr(failKey, LOGIN_LOCK_SECONDS);
+        if (fails >= MAX_LOGIN_FAILS) {
+          await redisSetFlag(lockKey, LOGIN_LOCK_SECONDS);
+          await redisDel(failKey);
+          return true;
+        }
+        return false;
+      };
+
+      // Find user and verify the password. A missing user and a wrong password
+      // are treated identically — same message, same failure count — so the
+      // endpoint never reveals whether an address exists.
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) {
+      const passwordValid = user ? await bcrypt.compare(password, user.passwordHash) : false;
+      if (!user || !passwordValid) {
+        const nowLocked = await registerFailure();
+        if (nowLocked) {
+          return reply.status(429).send({
+            error: {
+              code: 'AUTH_LOCKED',
+              message: 'Too many failed attempts. This account is locked for 24 hours.',
+              statusCode: 429,
+            },
+          });
+        }
         return reply.status(401).send({
           error: {
             code: 'AUTH_INVALID_CREDENTIALS',
@@ -166,17 +216,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
-      // Check password
-      const passwordValid = await bcrypt.compare(password, user.passwordHash);
-      if (!passwordValid) {
-        return reply.status(401).send({
-          error: {
-            code: 'AUTH_INVALID_CREDENTIALS',
-            message: 'Invalid email or password',
-            statusCode: 401,
-          },
-        });
-      }
+      // Correct password — clear any accumulated failures for this account.
+      await redisDel(failKey, lockKey);
 
       // A soft-deleted account is gone — treat it as unknown credentials.
       if (user.deletedAt) {

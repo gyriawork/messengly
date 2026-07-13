@@ -43,3 +43,32 @@ export async function cacheInvalidate(pattern: string): Promise<void> {
 export function cacheKey(...parts: string[]): string {
   return `cache:${parts.join(':')}`;
 }
+
+// ─── Small counter/flag helpers (used for login brute-force protection) ───
+
+/** Increment a counter, (re)setting its TTL each time. Returns the new value. */
+export async function redisIncr(key: string, ttlSeconds: number): Promise<number> {
+  const value = await redis.incr(key);
+  await redis.expire(key, ttlSeconds);
+  return value;
+}
+
+/** Seconds left on a key's TTL, or -1 if it has no expiry / -2 if it is gone. */
+export async function redisTtl(key: string): Promise<number> {
+  return redis.ttl(key);
+}
+
+/** Set a flag key with a TTL (value is irrelevant; existence is the signal). */
+export async function redisSetFlag(key: string, ttlSeconds: number): Promise<void> {
+  await redis.set(key, '1', 'EX', ttlSeconds);
+}
+
+/** True if the key exists. */
+export async function redisExists(key: string): Promise<boolean> {
+  return (await redis.exists(key)) === 1;
+}
+
+/** Delete one or more keys. */
+export async function redisDel(...keys: string[]): Promise<void> {
+  if (keys.length > 0) await redis.del(...keys);
+}

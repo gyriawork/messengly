@@ -66,6 +66,7 @@ function sanitizeUser(user: {
   lastActiveAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  organization?: { id: string; name: string; logo: string | null } | null;
 }) {
   return {
     id: user.id,
@@ -75,11 +76,15 @@ function sanitizeUser(user: {
     status: user.status,
     avatar: user.avatar,
     organizationId: user.organizationId,
+    // Name + logo of the user's org, so the sidebar can brand the footer.
+    organization: user.organization ?? null,
     lastActiveAt: user.lastActiveAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
 }
+
+const ORG_BRAND_SELECT = { id: true, name: true, logo: true } as const;
 
 // ─── Plugin ───
 
@@ -93,6 +98,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = await prisma.user.findUnique({
         where: { id: request.user.id },
+        include: { organization: { select: ORG_BRAND_SELECT } },
       });
 
       if (!user) {
@@ -123,6 +129,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
       const updated = await prisma.user.update({
         where: { id: request.user.id },
         data,
+        include: { organization: { select: ORG_BRAND_SELECT } },
       });
 
       return reply.send(sanitizeUser(updated));
@@ -197,6 +204,9 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
 
       if (targetOrgId) {
         where.organizationId = targetOrgId;
+        // Superadmins are platform-level accounts, not members of any single
+        // organization — keep them out of an org's member list and counts.
+        where.role = { not: 'superadmin' };
       }
       if (role) {
         where.role = role;
