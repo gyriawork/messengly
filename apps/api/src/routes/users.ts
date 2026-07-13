@@ -337,9 +337,10 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
           return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin cannot modify other admins or superadmins', 403);
         }
 
-        // Admin cannot promote users to superadmin
-        if (data.role === 'superadmin') {
-          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin cannot assign superadmin role', 403);
+        // Admin cannot promote users to superadmin or to admin (parity with
+        // the invite endpoint, which forbids admins creating admins).
+        if (data.role === 'superadmin' || data.role === 'admin') {
+          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin cannot assign elevated roles', 403);
         }
       }
 
@@ -362,6 +363,12 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         where: { id },
         data: updateData,
       });
+
+      // Deactivation or a password change ends the user's sessions — the same
+      // revocation DELETE /:id already performs.
+      if (password || (data.status === 'deactivated' && targetUser.status !== 'deactivated')) {
+        await prisma.refreshToken.deleteMany({ where: { userId: id } });
+      }
 
       return reply.send(sanitizeUser(updated));
     },

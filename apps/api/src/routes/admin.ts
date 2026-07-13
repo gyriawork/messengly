@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireRole } from '../middleware/rbac.js';
+import { requireRole, getOrgId } from '../middleware/rbac.js';
 import { encryptCredentials } from '../lib/crypto.js';
 import { getPlatformCredentials, invalidatePlatformCache } from '../lib/platform-credentials.js';
 import { logActivity } from '../lib/activity-logger.js';
@@ -332,9 +332,17 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   // using the active connection manager client.
   fastify.post(
     '/admin/backfill-sender-names',
-    { preHandler: [authenticate, requireRole('admin', 'superadmin')] },
+    // Superadmin-only: the backfill rewrites message/chat names in bulk, and
+    // must always run scoped to ONE organization — never across tenants.
+    { preHandler: [authenticate, requireRole('superadmin')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+      const backfillOrgId = getOrgId(request);
+      if (!backfillOrgId) {
+        return reply.status(400).send({
+          error: { code: 'VALIDATION_ERROR', message: 'Organization context is required', statusCode: 400 },
+        });
+      }
       const { getTelegramManager } = await import('../services/telegram-connection-manager.js');
       const { Api } = await import('telegram');
 
@@ -344,6 +352,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       // 1. Find Telegram chats that have messages with bad sender names
       const chatsWithBadNames = await prisma.chat.findMany({
         where: {
+          organizationId: backfillOrgId,
           messenger: 'telegram',
           messages: {
             some: {
@@ -437,7 +446,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       //    (the cache is now populated from getParticipants/getMessages)
       const allBadMessages = await prisma.message.findMany({
         where: {
-          chat: { messenger: 'telegram' },
+          chat: { messenger: 'telegram', organizationId: backfillOrgId },
           isSelf: false,
           senderExternalId: { not: null },
           OR: [
@@ -488,6 +497,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       for (const [senderId, name] of nameMap) {
         const result = await prisma.message.updateMany({
           where: {
+            chat: { organizationId: backfillOrgId },
             senderExternalId: senderId,
             OR: [
               { senderName: 'Unknown' },
@@ -506,6 +516,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       for (const [senderId, name] of nameMap) {
         await prisma.chat.updateMany({
           where: {
+            organizationId: backfillOrgId,
             messenger: 'telegram',
             OR: [
               { name: 'Unknown' },

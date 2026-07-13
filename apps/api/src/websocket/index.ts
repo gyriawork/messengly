@@ -104,7 +104,9 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     }
 
     try {
-      const payload = jwt.verify(token, getJwtSecret()) as JwtPayload;
+      // Pin the algorithm like middleware/auth.ts does — never accept
+      // whatever alg the token header claims.
+      const payload = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as JwtPayload;
 
       // Attach user data to socket
       (socket.data as { user: SocketUser }).user = {

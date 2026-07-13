@@ -26,7 +26,9 @@ export async function sendInviteEmail(params: {
 }): Promise<boolean> {
   const client = getResend();
   if (!client) {
-    console.log(`[DEV] Invite email for ${params.to} — temp password: ${params.tempPassword}`);
+    // Never log the password itself — this path also runs in prod when the
+    // email provider is not configured.
+    console.log(`[Email] RESEND_API_KEY not set — invite email to ${params.to} skipped`);
     return false;
   }
 
@@ -78,7 +80,8 @@ export async function sendPasswordResetEmail(params: {
 }): Promise<boolean> {
   const client = getResend();
   if (!client) {
-    console.log(`[DEV] Password reset link for ${params.to}: ${params.resetUrl}`);
+    // The reset URL embeds a live token — never log it.
+    console.log(`[Email] RESEND_API_KEY not set — password reset email to ${params.to} skipped`);
     return false;
   }
 

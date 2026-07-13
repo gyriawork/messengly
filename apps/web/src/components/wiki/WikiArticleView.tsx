@@ -9,6 +9,7 @@ import { ArrowLeft, Edit3, Trash2, Eye, Clock } from 'lucide-react';
 import { generateHTML } from '@tiptap/html';
 import StarterKit from '@tiptap/starter-kit';
 import LinkExtension from '@tiptap/extension-link';
+import DOMPurify from 'dompurify';
 
 interface WikiArticleViewProps {
   article: WikiArticle;
@@ -40,21 +41,30 @@ function formatRelativeTime(dateString: string): string {
   return `${diffDays} d ago`;
 }
 
+// Article JSON is user-authored — always sanitize the generated HTML before
+// it reaches dangerouslySetInnerHTML, or a crafted article (javascript: href,
+// injected markup) runs in every reader's session.
+function sanitize(html: string): string {
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+}
+
 function renderContent(content: unknown): string {
   if (!content) return '';
-  if (typeof content === 'string') return content;
+  if (typeof content === 'string') return sanitize(content);
   const obj = content as Record<string, unknown>;
   // Legacy { type: "text", content: "..." } format
-  if (obj.type === 'text' && typeof obj.content === 'string') return obj.content;
+  if (obj.type === 'text' && typeof obj.content === 'string') return sanitize(obj.content);
   // TipTap JSON format (type: "doc")
   if (obj.type === 'doc') {
     try {
-      return generateHTML(obj as Parameters<typeof generateHTML>[0], [StarterKit, LinkExtension]);
+      return sanitize(
+        generateHTML(obj as Parameters<typeof generateHTML>[0], [StarterKit, LinkExtension]),
+      );
     } catch {
-      return JSON.stringify(content);
+      return sanitize(JSON.stringify(content));
     }
   }
-  return JSON.stringify(content, null, 2);
+  return sanitize(JSON.stringify(content, null, 2));
 }
 
 export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {

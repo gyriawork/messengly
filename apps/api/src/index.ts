@@ -48,6 +48,9 @@ const fastify = Fastify({
         ? { target: 'pino-pretty', options: { colorize: true } }
         : undefined,
   },
+  // Behind Railway's proxy request.ip is otherwise the proxy address, which
+  // collapses every per-IP rate limit onto one shared key for all clients.
+  trustProxy: true,
 });
 
 // ─── Plugins ───

@@ -21,8 +21,10 @@ const sessionRoutes = require('./routes/session');
 const chatRoutes = require('./routes/chats');
 const messageRoutes = require('./routes/messages');
 
-if (process.env.NODE_ENV === 'production' && !config.API_KEY) {
-  logger.error('TEAMS_AGENT_API_KEY is required in production — refusing to start');
+// Fail-closed: the key is required unless the env is EXPLICITLY development.
+// An unset NODE_ENV (misconfigured deploy, staging) must not run open.
+if (process.env.NODE_ENV !== 'development' && !config.API_KEY) {
+  logger.error('TEAMS_AGENT_API_KEY is required outside development — refusing to start');
   process.exit(1);
 }
 

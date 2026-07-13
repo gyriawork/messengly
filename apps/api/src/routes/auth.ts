@@ -329,6 +329,42 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
+      // Re-validate the account before re-issuing tokens — otherwise a
+      // deactivated user or a suspended org keeps rotating a valid session
+      // indefinitely, and suspension only bites at the next fresh login.
+      const { user } = storedToken;
+      const denyRefresh = async (code: string, message: string, statusCode: number) => {
+        await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+        clearRefreshTokenCookie(reply);
+        return reply.status(statusCode).send({
+          error: { code, message, statusCode },
+        });
+      };
+
+      if (user.deletedAt) {
+        return denyRefresh('AUTH_INVALID_CREDENTIALS', 'Invalid refresh token', 401);
+      }
+      if (user.status === 'deactivated') {
+        return denyRefresh(
+          'AUTH_INSUFFICIENT_PERMISSIONS',
+          'This account has been deactivated',
+          403,
+        );
+      }
+      if (user.role !== 'superadmin' && user.organizationId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: user.organizationId },
+          select: { status: true },
+        });
+        if (org?.status === 'suspended') {
+          return denyRefresh(
+            'ORG_SUSPENDED',
+            'This platform is currently unavailable. Please contact us.',
+            403,
+          );
+        }
+      }
+
       // Rotate: delete old refresh token
       await prisma.refreshToken.delete({ where: { id: storedToken.id } });
 

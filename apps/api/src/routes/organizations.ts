@@ -27,11 +27,17 @@ const updateOrgBodySchema = z.object({
 });
 
 // The current-org update an org admin may perform on their own org (branding).
-// The logo is a small data-URI (client resizes it to a square), so cap length
-// well above a 128px PNG (~20KB) but low enough to reject full-size uploads.
+// The logo must be a raster-image data-URI (the client canvas always emits
+// PNG ≤ ~20KB), so enforce the prefix and cap the length — anything else
+// (external URLs, SVG, oversized blobs) is rejected.
 const updateCurrentOrgBodySchema = z.object({
   name: z.string().min(1).max(200).trim().optional(),
-  logo: z.string().max(300_000).nullable().optional(),
+  logo: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp|gif);base64,/, 'Logo must be an image data URI')
+    .max(100_000)
+    .nullable()
+    .optional(),
 });
 
 const orgIdParamSchema = z.object({
@@ -268,6 +274,14 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
         where: { id },
         data: updateData,
       });
+
+      // Suspension must end active sessions too, not just block new logins —
+      // otherwise members keep rotating refresh tokens for up to 7 days.
+      if (status === 'suspended' && existing.status !== 'suspended') {
+        await prisma.refreshToken.deleteMany({
+          where: { user: { organizationId: id, role: { not: 'superadmin' } } },
+        });
+      }
 
       return reply.send({
         id: updated.id,
