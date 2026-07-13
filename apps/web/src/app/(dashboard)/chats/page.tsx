@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useLayoutEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   Plus,
@@ -35,7 +36,7 @@ import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 import { useAuthStore } from '@/stores/auth';
-import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
+import { NewChatsBanner } from '@/components/chats/NewChatsBanner';
 
 // ─── Constants ───
 
@@ -547,10 +548,10 @@ function GroupRow({
 // ─── Main Page ───
 
 export default function ChatsPage() {
+  const router = useRouter();
   // Only the superadmin manages chats (import / assign / tag / delete).
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
-  const [showImport, setShowImport] = useState(false);
 
   // Compact view: a third of the row height, no avatars. Persisted per browser.
   const [compactView, setCompactView] = useState(false);
@@ -787,7 +788,7 @@ export default function ChatsPage() {
           {refreshStatuses.isPending ? 'Updating…' : 'Update chats'}
         </button>
         <button
-          onClick={() => setShowImport(true)}
+          onClick={() => router.push('/import')}
           className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
         >
           <Download className="h-4 w-4" />
@@ -795,6 +796,8 @@ export default function ChatsPage() {
         </button>
         </div>
       </div>
+
+      <NewChatsBanner />
 
       {/* Filters bar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -1221,7 +1224,6 @@ export default function ChatsPage() {
         )}
       </div>
 
-      {showImport && <ImportChatsModal onClose={() => setShowImport(false)} />}
     </div>
     </RequireOrgContext>
   );

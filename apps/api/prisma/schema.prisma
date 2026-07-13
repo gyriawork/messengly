@@ -29,6 +29,7 @@ model Organization {
   antibanSettings      AntibanSettings[]
   activityLogs         ActivityLog[]
   globalBroadcastLimits Json?   // max values admin can't exceed
+  pendingImports       Json?    // per-messenger count of discovered-but-not-imported chats: { [messenger]: { count, at } }
   wikiCategories       WikiCategory[]
   wikiArticles         WikiArticle[]
   wikiTags             WikiTag[]

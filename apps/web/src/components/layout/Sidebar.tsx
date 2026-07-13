@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   Inbox,
+  Download,
   Tag,
   ShieldCheck,
   Shield,
@@ -26,6 +27,7 @@ import { OrgSwitcher } from './OrgSwitcher';
 const baseNavItems = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
+  { icon: Download, href: '/import', label: 'Import' },
 ];
 
 // Broadcasting tools — visible to every authenticated user, since broadcasting

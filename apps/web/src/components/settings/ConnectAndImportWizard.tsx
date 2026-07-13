@@ -257,6 +257,7 @@ export function ConnectAndImportWizard({
         setImportResult(data);
         setStep('done');
         queryClient.invalidateQueries({ queryKey: ['chats'] });
+        queryClient.invalidateQueries({ queryKey: ['pending-imports'] });
       }
     };
 
@@ -296,6 +297,7 @@ export function ConnectAndImportWizard({
         setImportResult({ imported: result.count, failed: result.failed });
         setStep('done');
         queryClient.invalidateQueries({ queryKey: ['chats'] });
+        queryClient.invalidateQueries({ queryKey: ['pending-imports'] });
       }
     } catch (err) {
       importingRef.current = false;

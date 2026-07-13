@@ -1579,6 +1579,8 @@ const messageSyncWorker = new Worker<any>(
       await processGmailRehydrate(job as Job<GmailRehydratePayload>);
     } else if (job.name === 'gmail:auto-import') {
       await processGmailAutoImport(job as Job<GmailAutoImportPayload>);
+    } else if (job.name === 'chats:discovery') {
+      await runChatDiscovery();
     } else if (job.name === 'gmail:renew-watch') {
       await processGmailWatchRenewal();
     } else if (job.name === 'integration:initial-sync') {
@@ -1752,6 +1754,81 @@ async function recoverPendingChatSyncs(): Promise<void> {
 }
 
 // ─── Gmail Watch Renewal Schedule ───
+// ─── Periodic chat discovery ───
+// Every few hours, ask each connected messenger for its chat list and record
+// how many chats were never imported. The web app shows these counts as the
+// "new chats pending" banner. Gmail is skipped: email threads appear on their
+// own and are not "chats to discover".
+
+async function runChatDiscovery(): Promise<void> {
+  const integrations = await prisma.integration.findMany({
+    where: { status: 'connected', messenger: { not: 'gmail' } },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // One integration per org+messenger (mirrors how the API picks them).
+  const seen = new Set<string>();
+  for (const integration of integrations) {
+    const key = integration.organizationId + ':' + integration.messenger;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    try {
+      const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+      const adapter = await createAdapter(integration.messenger, credentials);
+      try {
+        await adapter.connect();
+        const scanned = await adapter.listChats();
+        const imported = await prisma.chat.findMany({
+          where: { organizationId: integration.organizationId, messenger: integration.messenger, deletedAt: null },
+          select: { externalChatId: true },
+        });
+        const importedIds = new Set(imported.map((c) => c.externalChatId));
+        const newCount = scanned.filter((c: { externalChatId: string }) => !importedIds.has(c.externalChatId)).length;
+
+        const org = await prisma.organization.findUnique({
+          where: { id: integration.organizationId },
+          select: { pendingImports: true },
+        });
+        const pending = (org?.pendingImports as Record<string, { count: number; at: string }> | null) ?? {};
+        if (newCount > 0) {
+          pending[integration.messenger] = { count: newCount, at: new Date().toISOString() };
+        } else {
+          delete pending[integration.messenger];
+        }
+        await prisma.organization.update({
+          where: { id: integration.organizationId },
+          data: { pendingImports: pending },
+        });
+        log.info(`Chat discovery: ${integration.messenger} has ${newCount} new chat(s)`, { organizationId: integration.organizationId });
+      } finally {
+        try { await adapter.disconnect(); } catch { /* ignore */ }
+      }
+    } catch (err) {
+      // A failed scan proves nothing — leave the previous counts alone.
+      log.warn(`Chat discovery failed for ${integration.messenger}`, { organizationId: integration.organizationId, error: String(err) });
+    }
+  }
+}
+
+async function scheduleChatDiscovery(): Promise<void> {
+  try {
+    const queue = new Queue('message-sync', { connection: bullConnection });
+    await queue.add(
+      'chats:discovery',
+      {},
+      {
+        jobId: 'chats-discovery-6h',
+        repeat: { every: 6 * 60 * 60 * 1000 }, // every 6 hours
+      },
+    );
+    await queue.close();
+    log.info('Chat discovery scheduled (every 6h)');
+  } catch (err) {
+    log.error('Failed to schedule chat discovery', { error: String(err) });
+  }
+}
+
 // Renew Gmail Pub/Sub watches daily (they expire after 7 days)
 
 async function scheduleGmailWatchRenewal(): Promise<void> {
@@ -1779,6 +1856,9 @@ setTimeout(() => {
   });
   recoverPendingChatSyncs().catch((err) => {
     log.error('Chat sync recovery error', { error: String(err) });
+  });
+  scheduleChatDiscovery().catch((err) => {
+    log.error('chat discovery scheduling error', { error: String(err) });
   });
   scheduleGmailWatchRenewal().catch((err) => {
     log.error('Gmail watch schedule error', { error: String(err) });

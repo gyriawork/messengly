@@ -8,6 +8,7 @@ import { messageSyncQueue } from '../lib/queue.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
+import { setPendingImports, type PendingImports } from '../lib/pending-imports.js';
 import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
@@ -716,6 +717,16 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         failed,
       });
 
+      // Imported chats are no longer "new"; the next scan recomputes exactly.
+      if (imported.length > 0) {
+        const org = await prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { pendingImports: true },
+        });
+        const pending = ((org?.pendingImports as PendingImports | null) ?? {})[messenger]?.count ?? 0;
+        await setPendingImports(organizationId, messenger, Math.max(0, pending - imported.length));
+      }
+
       // Invalidate caches
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
@@ -724,6 +735,26 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         count: imported.length,
         failed,
       });
+    },
+  );
+
+  // ─── GET /chats/pending-imports ───
+  // Feeds the "new chats pending" banner: per-messenger counts of chats seen
+  // in the latest scans that are not imported yet.
+
+  fastify.get(
+    '/chats/pending-imports',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { pendingImports: true },
+      });
+      return reply.send({ pending: (org?.pendingImports as PendingImports | null) ?? {} });
     },
   );
 
@@ -796,6 +827,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         const presentIds = chats
           .filter((c) => reachable.has(c.externalChatId))
           .map((c) => c.id);
+        // The same scan tells us how many chats exist that were never
+        // imported — that feeds the "new chats pending" banner.
+        const importedIds = new Set(chats.map((c) => c.externalChatId));
+        const newCount = [...reachable].filter((extId) => !importedIds.has(extId)).length;
+        await setPendingImports(organizationId, messenger, newCount);
+
         const activateIds = chats
           .filter((c) => c.status === 'inactive' && reachable.has(c.externalChatId))
           .map((c) => c.id);

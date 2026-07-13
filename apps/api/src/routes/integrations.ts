@@ -14,6 +14,7 @@ let createAuthClient: any, storePendingAuth: any, getPendingAuth: any, removePen
 let StringSession: any, Api: any, computeCheck: any;
 import { startWhatsAppPairing, getQrCode, getPairingStatus, cancelPairing, WhatsAppAdapter } from '../integrations/whatsapp.js';
 import { teamsAgent, TeamsAgentError } from '../lib/teams-client.js';
+import { setPendingImports } from '../lib/pending-imports.js';
 
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { getIO } from '../websocket/index.js';
@@ -1395,7 +1396,12 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             select: { externalChatId: true },
           });
           const imported = new Set(existing.map((c) => c.externalChatId));
-          return reply.send({ chats: chats.filter((c) => !imported.has(c.externalChatId)) });
+          const fresh = chats.filter((c) => !imported.has(c.externalChatId));
+
+          // This scan is the ground truth for the "new chats pending" banner.
+          await setPendingImports(organizationId, messenger, fresh.length);
+
+          return reply.send({ chats: fresh });
         } finally {
           try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
         }
