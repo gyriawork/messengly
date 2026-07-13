@@ -14,10 +14,12 @@ import {
   Clock,
   FileText,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/dates';
+import { downloadXls } from '@/lib/xls';
 import {
   useBroadcast,
   useRetryBroadcast,
@@ -97,6 +99,29 @@ const statusConfig: Record<
     icon: <XCircle className="h-4 w-4" />,
   },
 };
+
+// Download the recipient list as an Excel-openable .xls: Chat / Messenger /
+// Status, where Status is the two values operators filter on — "successful"
+// for delivered, "Not successful" for anything that didn't land (failed,
+// skipped, or never finished). Lets them pull the misses and resend by hand.
+function exportBroadcastChats(broadcast: Broadcast, chats: BroadcastChat[]) {
+  const rows = [...chats]
+    // Surface the misses first so the resend list is right at the top.
+    .sort((a, b) => Number(a.status === 'sent') - Number(b.status === 'sent'))
+    .map((c) => [
+      c.chatName,
+      messengerMeta[c.messenger]?.label ?? c.messenger,
+      c.status === 'sent' ? 'successful' : 'Not successful',
+    ]);
+  const safeName =
+    (broadcast.name || 'broadcast').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) ||
+    'broadcast';
+  downloadXls(
+    `${safeName}-recipients-${new Date().toISOString().slice(0, 10)}`,
+    ['Chat', 'Messenger', 'Status'],
+    rows,
+  );
+}
 
 interface BroadcastDetailProps {
   id: string;
@@ -185,6 +210,16 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
           </p>
         </div>
         <div className="flex gap-1">
+          {allChats.length > 0 && (
+            <button
+              onClick={() => exportBroadcastChats(broadcast, allChats)}
+              title="Download the recipient list (Chat / Messenger / Status) as an Excel file"
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <Download className="h-4 w-4" />
+              Download list
+            </button>
+          )}
           {(broadcast.status === 'failed' ||
             broadcast.status === 'partially_failed') && (
             <button

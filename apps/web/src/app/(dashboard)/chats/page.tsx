@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/dates';
+import { downloadXls } from '@/lib/xls';
 import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -66,12 +67,6 @@ const chatTypeIcons: Record<string, typeof MessageSquare> = {
 // ─── Export chats to an Excel-openable .xls file (no external dependency) ───
 
 function exportChatsToXls(chats: Chat[]) {
-  const esc = (s: unknown) =>
-    String(s ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Labels', 'Date created'];
   const rows = chats.map((c) => [
     c.name,
     messengerConfig[c.messenger]?.label ?? c.messenger,
@@ -80,21 +75,11 @@ function exportChatsToXls(chats: Chat[]) {
     (c.tags ?? []).map((t) => t.name).join(', '),
     formatDate(c.createdAt),
   ]);
-  const body =
-    `<table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
-    `<tbody>${rows
-      .map((r) => `<tr>${r.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr>`)
-      .join('')}</tbody></table>`;
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>${body}</body></html>`;
-  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `chats-${new Date().toISOString().slice(0, 10)}.xls`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  downloadXls(
+    `chats-${new Date().toISOString().slice(0, 10)}`,
+    ['Name', 'Messenger', 'Type', 'Owner', 'Labels', 'Date created'],
+    rows,
+  );
 }
 
 // ─── Assign Owner Dropdown (free-text owner label) ───
