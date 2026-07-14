@@ -5,6 +5,7 @@ import { Building2, ChevronDown, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOrganizations } from '@/hooks/useOrganizations';
 import { useSuperadminStore } from '@/stores/superadmin';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
@@ -30,7 +31,18 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
       clearOrg();
     } else {
       const org = organizations.find((o) => o.id === orgId);
-      if (org) setOrg(org.id, org.name, (org as { logo?: string | null }).logo ?? null);
+      if (org) {
+        setOrg(org.id, org.name, null);
+        // The list endpoint deliberately omits the logo blob; pull it in the
+        // background so the sidebar avatar fills in a moment later.
+        api
+          .get<{ id: string; logo: string | null }>(`/api/organizations/${org.id}/logo`)
+          .then((res) => {
+            const state = useSuperadminStore.getState();
+            if (state.selectedOrgId === org.id) state.setOrg(org.id, org.name, res.logo);
+          })
+          .catch(() => {});
+      }
     }
     queryClient.resetQueries();
   };

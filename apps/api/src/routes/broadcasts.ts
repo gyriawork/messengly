@@ -420,6 +420,86 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
     },
   );
 
+  // ─── GET /broadcasts/:id/stats ───
+  // Lightweight live view: status + per-status counts + the most recent
+  // delivery events. The detail endpoint above ships EVERY recipient row —
+  // polling that every few seconds during a 1000-chat send re-transfers the
+  // whole list each tick; this is what the live poll uses instead.
+
+  fastify.get(
+    '/broadcasts/:id/stats',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = idParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid broadcast id', 422);
+      }
+
+      const { id } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const where: Record<string, unknown> = { id, organizationId };
+      if (request.user.role === 'user') {
+        where.createdById = request.user.id;
+      }
+
+      const broadcast = await prisma.broadcast.findFirst({
+        where,
+        select: { id: true, status: true, deliveryRate: true, sentAt: true },
+      });
+      if (!broadcast) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
+      }
+
+      const grouped = await prisma.broadcastChat.groupBy({
+        by: ['status'],
+        where: { broadcastId: id },
+        _count: true,
+      });
+      const counts: Record<string, number> = {};
+      let total = 0;
+      for (const g of grouped) {
+        counts[g.status] = g._count;
+        total += g._count;
+      }
+
+      const recent = await prisma.broadcastChat.findMany({
+        where: { broadcastId: id, status: { not: 'pending' } },
+        orderBy: { updatedAt: 'desc' },
+        take: 30,
+        select: {
+          chatId: true,
+          status: true,
+          errorReason: true,
+          sentAt: true,
+          updatedAt: true,
+          chat: { select: { name: true, messenger: true } },
+        },
+      });
+
+      return reply.send({
+        id: broadcast.id,
+        status: broadcast.status,
+        deliveryRate: broadcast.deliveryRate,
+        sentAt: broadcast.sentAt,
+        total,
+        counts,
+        recent: recent.map((r) => ({
+          chatId: r.chatId,
+          chatName: r.chat?.name ?? 'Unknown chat',
+          messenger: r.chat?.messenger ?? 'telegram',
+          status: r.status,
+          error: r.errorReason ?? undefined,
+          sentAt: r.sentAt,
+          updatedAt: r.updatedAt,
+        })),
+      });
+    },
+  );
+
   // ─── POST /broadcasts ───
 
   fastify.post(

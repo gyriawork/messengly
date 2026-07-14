@@ -38,12 +38,40 @@ export function useBroadcast(id: string | undefined) {
     queryKey: ['broadcast', id],
     queryFn: () => api.get<Broadcast>(`/api/broadcasts/${id}`),
     enabled: !!id,
-    // A broadcast mid-send changes every few seconds; ws events are not
-    // guaranteed to reach a long-lived tab, so poll while it is live.
-    refetchInterval: (query) =>
-      query.state.data?.status === 'sending' || query.state.data?.status === 'canceling'
-        ? 4000
-        : false,
+    // Live updates come from the lightweight /stats poll (useBroadcastStats);
+    // this full object (every recipient row) is only refetched on transitions.
+  });
+}
+
+export interface BroadcastStats {
+  id: string;
+  status: Broadcast['status'];
+  deliveryRate: number | null;
+  sentAt: string | null;
+  total: number;
+  counts: Record<string, number>;
+  recent: Array<{
+    chatId: string;
+    chatName: string;
+    messenger: string;
+    status: string;
+    error?: string;
+    sentAt: string | null;
+    updatedAt: string | null;
+  }>;
+}
+
+/**
+ * Cheap live view of a broadcast: counts + the latest delivery events. Polled
+ * while a send is in flight instead of re-fetching every recipient row each
+ * tick (which on a 1000-chat send re-shipped the whole list every 4s).
+ */
+export function useBroadcastStats(id: string | undefined, live: boolean) {
+  return useQuery({
+    queryKey: ['broadcast-stats', id],
+    queryFn: () => api.get<BroadcastStats>(`/api/broadcasts/${id}/stats`),
+    enabled: !!id && live,
+    refetchInterval: live ? 3000 : false,
   });
 }
 

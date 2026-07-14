@@ -22,11 +22,13 @@ import { formatDateTime } from '@/lib/dates';
 import { downloadXls } from '@/lib/xls';
 import {
   useBroadcast,
+  useBroadcastStats,
   useRetryBroadcast,
   useDuplicateBroadcast,
   useDeleteBroadcast,
   useCancelBroadcast,
 } from '@/hooks/useBroadcasts';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Broadcast, BroadcastChat, BroadcastStatus } from '@/types/broadcast';
 
 const messengerMeta: Record<
@@ -140,7 +142,16 @@ interface BroadcastDetailProps {
 
 export function BroadcastDetail({ id }: BroadcastDetailProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: broadcast, isLoading } = useBroadcast(id);
+  const isLive = broadcast?.status === 'sending' || broadcast?.status === 'canceling';
+  // Cheap poll while live; the heavy full object refetches only on transitions.
+  const { data: liveStats } = useBroadcastStats(id, Boolean(isLive));
+  useEffect(() => {
+    if (isLive && liveStats && liveStats.status !== broadcast?.status) {
+      queryClient.invalidateQueries({ queryKey: ['broadcast', id] });
+    }
+  }, [isLive, liveStats, broadcast?.status, queryClient, id]);
   const retryMutation = useRetryBroadcast();
   const duplicateMutation = useDuplicateBroadcast();
   const deleteMutation = useDeleteBroadcast();
@@ -170,9 +181,14 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
 
   const config = statusConfig[broadcast.status];
   const stats = (broadcast as unknown as Record<string, unknown>).stats as { total?: number; sent?: number; failed?: number; pending?: number } | undefined;
-  const total = stats?.total || broadcast.chatCount || 0;
-  const sent = stats?.sent || broadcast.sentCount || 0;
-  const failed = stats?.failed || broadcast.failedCount || 0;
+  // While live, the fresh numbers come from the lightweight stats poll.
+  const total = (isLive && liveStats?.total) || stats?.total || broadcast.chatCount || 0;
+  const sent = isLive && liveStats
+    ? liveStats.counts['sent'] ?? 0
+    : stats?.sent || broadcast.sentCount || 0;
+  const failed = isLive && liveStats
+    ? (liveStats.counts['failed'] ?? 0) + (liveStats.counts['retry_exhausted'] ?? 0)
+    : stats?.failed || broadcast.failedCount || 0;
   const progress = total > 0 ? Math.round((sent / total) * 100) : 0;
 
   // The detail API returns recipients grouped under `chatsByStatus`; normalize
@@ -351,6 +367,12 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
       <DeliveryLog
         chats={allChats}
         isLive={broadcast.status === 'sending' || broadcast.status === 'canceling'}
+        liveEntries={isLive ? liveStats?.recent : undefined}
+        livePending={
+          isLive && liveStats
+            ? (liveStats.counts['pending'] ?? 0) + (liveStats.counts['retrying'] ?? 0)
+            : undefined
+        }
       />
 
       {/* Per-messenger breakdown */}
@@ -577,15 +599,47 @@ const LOG_STATUS: Record<string, { label: string; className: string }> = {
   sending: { label: 'sending', className: 'text-blue-500' },
 };
 
-function DeliveryLog({ chats, isLive }: { chats: BroadcastChat[]; isLive: boolean }) {
+function DeliveryLog({
+  chats,
+  isLive,
+  liveEntries,
+  livePending,
+}: {
+  chats: BroadcastChat[];
+  isLive: boolean;
+  /** While live the fresh rows come from the /stats poll, not the stale full fetch. */
+  liveEntries?: Array<{
+    chatId: string;
+    chatName: string;
+    messenger: string;
+    status: string;
+    error?: string;
+    sentAt: string | null;
+    updatedAt: string | null;
+  }>;
+  livePending?: number;
+}) {
   const [open, setOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const entries = chats
+  const source =
+    isLive && liveEntries
+      ? liveEntries.map((e) => ({
+          chatId: e.chatId,
+          chatName: e.chatName,
+          messenger: e.messenger,
+          status: e.status as BroadcastChat['status'],
+          error: e.error,
+          sentAt: e.sentAt,
+          updatedAt: e.updatedAt,
+        }))
+      : chats;
+
+  const entries = source
     .filter((c) => c.status !== 'pending')
     .map((c) => ({ ...c, ts: c.sentAt ?? c.updatedAt ?? null }))
     .sort((a, b) => new Date(a.ts ?? 0).getTime() - new Date(b.ts ?? 0).getTime());
-  const pending = chats.length - entries.length;
+  const pending = livePending ?? chats.length - entries.length;
 
   // Keep the newest lines in view while the send is running.
   useEffect(() => {

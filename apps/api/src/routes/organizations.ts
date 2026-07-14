@@ -142,7 +142,18 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
 
       const organizations = await prisma.organization.findMany({
         where,
-        include: {
+        // Explicit select: `logo` is a data-URI up to ~100KB per org — never
+        // ship it in a list. The switcher fetches GET /:id/logo on demand.
+        select: {
+          id: true,
+          name: true,
+          defaultLanguage: true,
+          timezone: true,
+          chatVisibilityAll: true,
+          status: true,
+          globalBroadcastLimits: true,
+          createdAt: true,
+          updatedAt: true,
           _count: {
             select: {
               // Count only real members: soft-deleted users and platform-level
@@ -159,7 +170,6 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
       const result = organizations.map((org) => ({
         id: org.id,
         name: org.name,
-        logo: org.logo,
         defaultLanguage: org.defaultLanguage,
         timezone: org.timezone,
         chatVisibilityAll: org.chatVisibilityAll,
@@ -172,6 +182,28 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
       }));
 
       return reply.send(result);
+    },
+  );
+
+  // ─── GET /api/organizations/:id/logo ───
+  // The one field the list endpoint deliberately omits (data-URI up to
+  // ~100KB); the org switcher fetches it on demand for the sidebar avatar.
+  fastify.get(
+    '/:id/logo',
+    { preHandler: superadminPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = orgIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid organization id', 422);
+      }
+      const org = await prisma.organization.findUnique({
+        where: { id: paramsParsed.data.id },
+        select: { id: true, logo: true },
+      });
+      if (!org) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Organization not found', 404);
+      }
+      return reply.send({ id: org.id, logo: org.logo });
     },
   );
 

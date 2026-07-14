@@ -1,7 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { WikiArticleEditor } from '@/components/wiki/WikiArticleEditor';
+import dynamic from 'next/dynamic';
+
+// The TipTap editor drags in the whole @tiptap bundle — load on demand.
+const WikiArticleEditor = dynamic(
+  () => import('@/components/wiki/WikiArticleEditor').then((m) => m.WikiArticleEditor),
+  { ssr: false },
+);
 import { useCreateWikiArticle, type CreateArticleInput } from '@/hooks/useWiki';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 

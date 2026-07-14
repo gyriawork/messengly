@@ -75,6 +75,7 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   @@index([expiresAt])
+  @@index([userId]) // bulk revocation on suspend/deactivate/password change
 }
 
 model PasswordResetToken {
@@ -125,6 +126,8 @@ model Chat {
   @@unique([externalChatId, messenger, organizationId])
   @@index([organizationId])
   @@index([organizationId, lastActivityAt])
+  @@index([organizationId, messenger, deletedAt]) // discovery/import diffing
+  @@index([organizationId, status]) // reachability filters + refresh-statuses
   @@index([ownerId])
   @@index([importedById])
 }
@@ -262,6 +265,7 @@ model Broadcast {
   chats            BroadcastChat[]
 
   @@index([organizationId])
+  @@index([organizationId, status]) // list tabs + stuck-broadcast recovery
 }
 
 model BroadcastChat {

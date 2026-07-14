@@ -55,7 +55,11 @@ import {
   useLoadFullHistory,
   type MessageAttachment,
 } from '@/hooks/useChats';
-import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
+import dynamic from 'next/dynamic';
+import { Theme, type EmojiClickData } from 'emoji-picker-react';
+
+// emoji-picker-react is a large bundle — load it only when the picker opens.
+const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 import { useReactions } from '@/hooks/useReactions';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useIntegrations } from '@/hooks/useIntegrations';

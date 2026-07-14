@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
+import dynamic from 'next/dynamic';
+import { EmojiClickData, Theme } from 'emoji-picker-react';
+
+// emoji-picker-react is a large bundle — load it only when the picker opens.
+const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 
 interface ReactionsPickerProps {
   onEmojiSelect: (emoji: string) => void;

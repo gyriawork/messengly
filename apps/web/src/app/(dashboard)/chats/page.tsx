@@ -572,6 +572,13 @@ export default function ChatsPage() {
     });
   };
   const [search, setSearch] = useState('');
+  // Query the server 300ms after the user stops typing, not per keystroke —
+  // the search filter also scans message text server-side.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
@@ -584,7 +591,7 @@ export default function ChatsPage() {
   const { data: tagsData } = useTags();
 
   const { data, isLoading } = useChats({
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     messenger: messengerFilter,
     status: statusFilter || undefined,
     owner: ownerFilter || undefined,
