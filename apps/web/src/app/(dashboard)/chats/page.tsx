@@ -532,21 +532,25 @@ function GroupRow({
 
 // ─── Main Page ───
 
-// Grows the rendered window when scrolled into view. With thousands of chats
+// Grows the rendered window when scrolled near. With thousands of chats
 // loaded, only ~100 rows mount at a time — the rest appear as you scroll.
+// Uses a cheap position poll instead of IntersectionObserver: the page
+// scrolls inside a nested overflow container and IO callbacks proved
+// unreliable there, while one getBoundingClientRect every 400ms is free.
 function LoadMoreSentinel({ onVisible }: { onVisible: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) onVisible();
-      },
-      { rootMargin: '600px' },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
+    const check = () => {
+      // Skip the display:none twin (mobile list vs table — only one is laid out).
+      if (el.offsetParent === null) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 600) onVisible();
+    };
+    check();
+    const interval = setInterval(check, 400);
+    return () => clearInterval(interval);
   }, [onVisible]);
   return <div ref={ref} className="h-8" />;
 }
