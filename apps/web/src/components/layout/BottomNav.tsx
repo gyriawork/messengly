@@ -8,11 +8,10 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import {
   LayoutDashboard,
   Inbox,
-  MessageSquare,
+  Download,
   Send,
   MoreHorizontal,
   FileText,
-  BookOpen,
   Tag,
   Activity,
   Settings,
@@ -23,18 +22,19 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 
+// Mirrors the desktop sidebar: Messenger and Wiki are intentionally hidden
+// there, so they don't belong in the mobile nav either.
 const tabs = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
-  { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
+  { icon: Download, href: '/import', label: 'Import' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
 ];
 
 const moreItems = [
-  { icon: FileText, href: '/templates', label: 'Templates' },
-  { icon: BookOpen, href: '/wiki', label: 'Wiki' },
-  { icon: Tag, href: '/tags', label: 'Labels' },
   { icon: Activity, href: '/activity', label: 'Activity' },
+  { icon: FileText, href: '/templates', label: 'Templates' },
+  { icon: Tag, href: '/tags', label: 'Labels' },
   { icon: Settings, href: '/settings', label: 'Settings' },
 ];
 

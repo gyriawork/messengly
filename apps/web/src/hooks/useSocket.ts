@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Message } from '@/types/chat';
@@ -148,10 +149,40 @@ export function useSocket() {
       }, 2000);
     });
 
-    // Broadcast status update
-    socket.on('broadcast_status', () => {
-      queryClientRef.current.invalidateQueries({ queryKey: ['broadcasts'] });
-    });
+    // Broadcast status update. Terminal transitions also raise a global
+    // toast, so a finished/failed send is announced anywhere in the app —
+    // previously you only found out by keeping the broadcast page open.
+    socket.on(
+      'broadcast_status',
+      (data: {
+        broadcastId: string;
+        status: string;
+        stats?: { total?: number; sent?: number; failed?: number; skipped?: number };
+      }) => {
+        queryClientRef.current.invalidateQueries({ queryKey: ['broadcasts'] });
+        queryClientRef.current.invalidateQueries({ queryKey: ['broadcast', data.broadcastId] });
+
+        const goToDetails = {
+          label: 'View',
+          onClick: () => {
+            window.location.href = `/broadcast/${data.broadcastId}`;
+          },
+        };
+        const summary = data.stats
+          ? ` — ${data.stats.sent ?? 0} sent${(data.stats.failed ?? 0) > 0 ? `, ${data.stats.failed} failed` : ''}`
+          : '';
+
+        if (data.status === 'sent') {
+          toast.success(`Broadcast finished${summary}`, { action: goToDetails });
+        } else if (data.status === 'partially_failed') {
+          toast.warning(`Broadcast partially failed${summary}`, { action: goToDetails });
+        } else if (data.status === 'failed') {
+          toast.error(`Broadcast failed${summary}`, { action: goToDetails });
+        } else if (data.status === 'canceled') {
+          toast.info(`Broadcast canceled${summary}`, { action: goToDetails });
+        }
+      },
+    );
 
     // Import progress — used by ConnectAndImportWizard
     // (listened at component level via getSocket(), these are just for cache invalidation)

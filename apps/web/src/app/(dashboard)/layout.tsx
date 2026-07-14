@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { BottomNav } from '@/components/layout/BottomNav';
+import { IntegrationHealthBanner } from '@/components/layout/IntegrationHealthBanner';
 import { useAuthStore } from '@/stores/auth';
 import { useSuperadminStore } from '@/stores/superadmin';
 import { useSocket } from '@/hooks/useSocket';
@@ -58,6 +59,7 @@ export default function DashboardLayout({
     <div className="flex h-[100dvh] gap-2.5 bg-[#e3e5f0] p-2.5 md:gap-3 md:p-3">
       <Sidebar />
       <main className="flex-1 overflow-auto rounded-2xl bg-[#f8fafc] pb-14 shadow-sm ring-1 ring-slate-900/5 md:pb-0">
+        <IntegrationHealthBanner />
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
       <BottomNav />
