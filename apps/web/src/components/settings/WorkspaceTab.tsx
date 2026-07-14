@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Ban,
   CheckCircle2,
+  KeyRound,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,6 +22,15 @@ import { useWorkspaceSettings } from '@/hooks/useActivity';
 import { api } from '@/lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
+import { CredentialReveal } from './CredentialReveal';
+
+/** 14-char random password for admin-initiated resets (client-generated). */
+function generatePassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
 
 // ─── Types ───
 
@@ -69,6 +79,8 @@ type InviteFormData = z.infer<typeof inviteSchema>;
 
 function InviteUserModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  // Set when the API couldn't email the credentials — shown once for copying.
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null);
 
   const {
     register,
@@ -80,11 +92,20 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
   });
 
   const inviteMutation = useMutation({
-    mutationFn: (data: InviteFormData) => api.post('/api/users/invite', data),
-    onSuccess: () => {
+    mutationFn: (data: InviteFormData) =>
+      api.post<{ email: string; emailSent?: boolean; tempPassword?: string }>(
+        '/api/users/invite',
+        data,
+      ),
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['workspace-users'] });
-      toast.success('User invited successfully');
-      onClose();
+      if (res.tempPassword) {
+        // No email went out — keep the modal open and reveal the credentials.
+        setCredentials({ email: res.email, password: res.tempPassword });
+      } else {
+        toast.success('User invited — credentials sent by email');
+        onClose();
+      }
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to invite user');
@@ -101,9 +122,13 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
       <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Invite Team Member</h3>
+            <h3 className="text-lg font-semibold text-slate-900">
+              {credentials ? 'Member added' : 'Invite Team Member'}
+            </h3>
             <p className="text-xs text-slate-500">
-              They will receive an email with login credentials
+              {credentials
+                ? 'Share these credentials with them'
+                : 'Add a teammate and share their login credentials'}
             </p>
           </div>
           <button
@@ -114,6 +139,13 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {credentials ? (
+          <CredentialReveal
+            email={credentials.email}
+            password={credentials.password}
+            onDone={onClose}
+          />
+        ) : (
         <form onSubmit={handleSubmit((d) => inviteMutation.mutate(d))} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -194,6 +226,7 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
             Send Invite
           </button>
         </form>
+        )}
       </div>
     </div>
   );
@@ -204,12 +237,15 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
 function UserActions({
   user,
   currentUserId,
+  onResetPassword,
 }: {
   user: OrgUser;
   currentUserId?: string;
+  onResetPassword: (creds: { email: string; password: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const currentRole = useAuthStore((s) => s.user?.role);
 
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; role?: string; status?: string }) =>
@@ -224,10 +260,26 @@ function UserActions({
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: (password: string) =>
+      api.patch(`/api/users/${user.id}`, { password }).then(() => password),
+    onSuccess: (password) => {
+      setOpen(false);
+      onResetPassword({ email: user.email, password });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to reset password');
+    },
+  });
+
   const isSelf = user.id === currentUserId;
   const isDeactivated = user.status === 'deactivated';
+  // Backend forbids org admins from assigning/removing the admin role and from
+  // touching other admins — only show what will actually succeed.
+  const canChangeRole = currentRole === 'superadmin';
+  const canTouch = currentRole === 'superadmin' || user.role === 'user';
 
-  if (isSelf || user.role === 'superadmin') return null;
+  if (isSelf || user.role === 'superadmin' || !canTouch) return null;
 
   return (
     <div className="relative">
@@ -242,8 +294,8 @@ function UserActions({
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-            {/* Role change */}
-            {user.role === 'user' && (
+            {/* Role change (superadmin only — backend rejects it for admins) */}
+            {canChangeRole && user.role === 'user' && (
               <button
                 onClick={() => updateMutation.mutate({ role: 'admin' })}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -252,7 +304,7 @@ function UserActions({
                 Promote to Admin
               </button>
             )}
-            {user.role === 'admin' && (
+            {canChangeRole && user.role === 'admin' && (
               <button
                 onClick={() => updateMutation.mutate({ role: 'user' })}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -261,6 +313,16 @@ function UserActions({
                 Demote to User
               </button>
             )}
+
+            {/* Reset password: sets a fresh one and reveals it once for copying */}
+            <button
+              onClick={() => resetPasswordMutation.mutate(generatePassword())}
+              disabled={resetPasswordMutation.isPending}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              Reset password
+            </button>
 
             {/* Status toggle */}
             <button
@@ -299,6 +361,8 @@ function UserActions({
 
 function TeamMembersSection() {
   const [showInvite, setShowInvite] = useState(false);
+  // Set right after an admin resets someone's password — revealed once.
+  const [resetCreds, setResetCreds] = useState<{ email: string; password: string } | null>(null);
   const currentUser = useAuthStore((s) => s.user);
 
   // GET /api/users returns a bare array
@@ -445,7 +509,11 @@ function TeamMembersSection() {
 
                     {/* Actions */}
                     <td className="px-3 py-3.5">
-                      <UserActions user={user} currentUserId={currentUser?.id} />
+                      <UserActions
+                        user={user}
+                        currentUserId={currentUser?.id}
+                        onResetPassword={setResetCreds}
+                      />
                     </td>
                   </tr>
                 );
@@ -456,6 +524,23 @@ function TeamMembersSection() {
       </div>
 
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
+
+      {resetCreds && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm motion-safe:animate-overlay-in md:items-center">
+          <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg motion-safe:animate-modal-in md:max-w-md md:rounded-xl">
+            <div className="mb-5">
+              <h3 className="text-lg font-semibold text-slate-900">Password reset</h3>
+              <p className="text-xs text-slate-500">Share the new password with the user</p>
+            </div>
+            <CredentialReveal
+              email={resetCreds.email}
+              password={resetCreds.password}
+              note="Copy the new password now — it won't be shown again. The user's previous sessions have been signed out."
+              onDone={() => setResetCreds(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

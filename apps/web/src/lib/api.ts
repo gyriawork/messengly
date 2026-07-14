@@ -105,6 +105,23 @@ if (typeof document !== 'undefined') {
   });
 }
 
+/**
+ * Records why the session ended so the login page can explain it after the
+ * hard redirect (a toast fired right before window.location dies with the
+ * page). Read + cleared by the login page on mount.
+ */
+export const SESSION_END_REASON_KEY = 'sessionEndReason';
+function flagSessionEnd(message: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!sessionStorage.getItem(SESSION_END_REASON_KEY)) {
+      sessionStorage.setItem(SESSION_END_REASON_KEY, message);
+    }
+  } catch {
+    // sessionStorage unavailable — the redirect still works, just unexplained
+  }
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   try {
     const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
@@ -114,7 +131,17 @@ async function refreshAccessToken(): Promise<string | null> {
       body: '{}',
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // A 403 here is a real lockout (suspended org / deactivated account) —
+      // surface its message instead of the generic "session expired".
+      if (response.status === 403) {
+        const data = await response.json().catch(() => null);
+        flagSessionEnd(
+          data?.error?.message ?? 'Your account is currently unavailable. Please contact us.',
+        );
+      }
+      return null;
+    }
 
     const data = await response.json();
     if (data.accessToken) {
@@ -173,6 +200,7 @@ async function request<T>(
       response = await fetch(`${BASE_URL}${finalEndpoint}`, config);
       // If retried request still returns 401, session is broken — force logout
       if (response.status === 401) {
+        flagSessionEnd('Your session has expired. Please sign in again.');
         clearTokens();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
@@ -180,6 +208,7 @@ async function request<T>(
         throw new ApiError(401, 'AUTH_TOKEN_EXPIRED', 'Session expired');
       }
     } else {
+      flagSessionEnd('Your session has expired. Please sign in again.');
       clearTokens();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';

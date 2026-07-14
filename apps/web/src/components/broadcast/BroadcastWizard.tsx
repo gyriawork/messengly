@@ -700,7 +700,7 @@ export function BroadcastWizard() {
                 <div className="max-h-[400px] overflow-auto rounded-lg border border-slate-200">
                   {filteredChats.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-400">
-                      No chats found. Import chats from the Messenger page
+                      No chats found. Bring some in from the Import section
                       first.
                     </div>
                   ) : (

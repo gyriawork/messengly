@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireMinRole } from '../middleware/rbac.js';
+import { requireMinRole, getOrgId } from '../middleware/rbac.js';
 
 // ─── Zod Schemas ───
 
@@ -248,7 +248,13 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'You must belong to an organization to invite users', 400);
       }
 
-      const organizationId = request.user.organizationId;
+      // getOrgId: an admin invites into their own org; a superadmin invites
+      // into the org selected in the sidebar (query param), not their own
+      // (null) org — otherwise the invited user would be org-less.
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Select an organization before inviting users', 400);
+      }
 
       // Admin users can only invite 'user' or 'admin' roles, not superadmin
       if (request.user.role === 'admin' && role !== 'user') {
@@ -280,7 +286,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         ? await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } })
         : null;
 
-      await sendInviteEmail({
+      const emailSent = await sendInviteEmail({
         to: email,
         name,
         tempPassword,
@@ -288,7 +294,15 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         loginUrl: `${process.env.APP_URL || 'http://localhost:3000'}/login`,
       });
 
-      return reply.status(201).send(sanitizeUser(user));
+      // When no email went out (provider unconfigured or send failed), the
+      // inviter is the only delivery channel left — hand them the password
+      // once so they can pass it on. It travels outside sanitizeUser on
+      // purpose and is never persisted in plain text.
+      return reply.status(201).send({
+        ...sanitizeUser(user),
+        emailSent,
+        ...(emailSent ? {} : { tempPassword }),
+      });
     },
   );
 

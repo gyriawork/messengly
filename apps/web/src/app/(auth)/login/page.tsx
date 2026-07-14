@@ -4,10 +4,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
+import { SESSION_END_REASON_KEY } from '@/lib/api';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 const loginSchema = z.object({
@@ -30,6 +31,20 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
+
+  // Explain WHY the user landed here after a forced logout (expired session,
+  // suspended org) — the flag is set right before the hard redirect.
+  useEffect(() => {
+    try {
+      const reason = sessionStorage.getItem(SESSION_END_REASON_KEY);
+      if (reason) {
+        sessionStorage.removeItem(SESSION_END_REASON_KEY);
+        toast.error(reason);
+      }
+    } catch {
+      // sessionStorage unavailable — nothing to explain
+    }
+  }, []);
 
   const onSubmit = async (data: LoginForm) => {
     setIsSubmitting(true);
@@ -99,6 +114,7 @@ export default function LoginPage() {
               </label>
               <button
                 type="button"
+                onClick={() => router.push('/forgot-password')}
                 className="text-xs font-medium text-slate-400 transition-colors hover:text-accent"
               >
                 Forgot password?

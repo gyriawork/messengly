@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ConnectAndImportWizard } from '@/components/settings/ConnectAndImportWizard';
 import { NewChatsBanner, usePendingImports } from '@/components/chats/NewChatsBanner';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { useAuthStore } from '@/stores/auth';
 import type { MessengerType } from '@/types/chat';
 
 const MESSENGER_LABELS: Record<MessengerType, string> = {
@@ -23,6 +24,7 @@ export default function ImportPage() {
   const { data: integrationsData, isLoading } = useIntegrations();
   const { data: pendingData } = usePendingImports();
   const [selectedMessenger, setSelectedMessenger] = useState<MessengerType | null>(null);
+  const isSuperadmin = useAuthStore((s) => s.user?.role === 'superadmin');
 
   const pending = pendingData?.pending ?? {};
 
@@ -64,7 +66,13 @@ export default function ImportPage() {
         <EmptyState
           icon={<Download className="h-12 w-12" />}
           title="Nothing to import from yet"
-          description="Connect a messenger in Settings first, then come back here to bring in its chats."
+          description={
+            // Only the superadmin can open Settings → Integrations; pointing
+            // anyone else there would be a dead end.
+            isSuperadmin
+              ? 'Connect a messenger in Settings first, then come back here to bring in its chats.'
+              : 'No messengers are connected yet. Ask your workspace operator to connect one, then come back here.'
+          }
         />
       ) : (
         <div className="space-y-3">

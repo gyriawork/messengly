@@ -41,15 +41,17 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
 
-  // Only the superadmin manages messenger integrations and the workspace.
-  // Org admins can brand their organization; everyone gets the Profile tab.
+  // Only the superadmin manages messenger integrations. Org admins run their
+  // own team (Workspace) and branding (Organization); everyone gets Profile.
   const isSuperadmin = user?.role === 'superadmin';
   const isAdmin = user?.role === 'admin';
-  const canBrand = isSuperadmin || isAdmin;
+  const canManageOrg = isSuperadmin || isAdmin;
+  const canBrand = canManageOrg;
   const tabs = ALL_TABS.filter((t) => {
     if (t.id === 'profile') return true;
     if (t.id === 'organization') return canBrand;
-    return isSuperadmin; // integrations, workspace
+    if (t.id === 'workspace') return canManageOrg;
+    return isSuperadmin; // integrations
   });
 
   // Keep the active tab valid when the role-filtered tab set changes.
@@ -121,7 +123,7 @@ export default function SettingsPage() {
             onAutoOpenHandled={() => setAutoOpenMessenger(null)}
           />
         )}
-        {activeTab === 'workspace' && isSuperadmin && <WorkspaceTab />}
+        {activeTab === 'workspace' && canManageOrg && <WorkspaceTab />}
         {activeTab === 'organization' && canBrand && <OrganizationTab />}
         {activeTab === 'profile' && <ProfileTab />}
       </div>
