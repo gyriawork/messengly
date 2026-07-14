@@ -293,6 +293,24 @@ async function sendMessengerBatch(
   for (let i = 0; i < messengerChats.length; i++) {
     const bc = messengerChats[i]!;
 
+    // Cancel check: the API flips the broadcast to 'canceling'; honour it at
+    // the message boundary. One SELECT per message is noise next to the
+    // multi-second anti-ban delays.
+    const live = await prisma.broadcast.findUnique({
+      where: { id: broadcastId },
+      select: { status: true },
+    });
+    if (live?.status === 'canceling' || live?.status === 'canceled') {
+      const remainingIds = messengerChats.slice(i).map((c) => c.id);
+      const res = await prisma.broadcastChat.updateMany({
+        where: { id: { in: remainingIds }, status: 'pending' },
+        data: { status: 'skipped', errorReason: 'Broadcast canceled by user' },
+      });
+      skipped += res.count;
+      log.info(`Cancel requested — stopping ${messenger} batch`, { broadcastId, skipped: res.count });
+      break;
+    }
+
     // Check hourly/daily limits
     if (hourlyCount >= maxMessagesPerHour) {
       log.info(`Hourly limit reached for ${messenger}, waiting 60 seconds`, { broadcastId });
@@ -433,8 +451,17 @@ async function finalizeBroadcast(broadcastId: string, organizationId: string): P
 
   const deliveryRate = total > 0 ? sentCount / total : 0;
 
+  // A cancel requested mid-send wins over the computed outcome.
+  const current = await prisma.broadcast.findUnique({
+    where: { id: broadcastId },
+    select: { status: true },
+  });
+  const wasCanceled = current?.status === 'canceling' || current?.status === 'canceled';
+
   let status: string;
-  if (pendingCount > 0) {
+  if (wasCanceled) {
+    status = 'canceled';
+  } else if (pendingCount > 0) {
     // Some chats still pending (hit daily limit); keep as sending
     status = 'sending';
   } else if (sentCount === total) {
@@ -493,6 +520,15 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
       where: { id: broadcastId },
       data: { status: 'sending', sentAt: new Date() },
     });
+  } else if (broadcast.status === 'canceling') {
+    // Cancel raced this job — mark the untouched recipients and finalize so
+    // the broadcast doesn't strand in 'canceling'.
+    await prisma.broadcastChat.updateMany({
+      where: { broadcastId, status: 'pending' },
+      data: { status: 'skipped', errorReason: 'Broadcast canceled by user' },
+    });
+    await finalizeBroadcast(broadcastId, organizationId);
+    return;
   } else if (broadcast.status !== 'sending') {
     log.warn(`Broadcast is in unexpected status "${broadcast.status}", skipping`, { broadcastId });
     return;
@@ -1712,8 +1748,8 @@ async function recoverStuckSendingBroadcasts(): Promise<void> {
     const queue = new Queue('broadcast', { connection: bullConnection });
 
     const stuck = await prisma.broadcast.findMany({
-      where: { status: 'sending' },
-      select: { id: true, organizationId: true },
+      where: { status: { in: ['sending', 'canceling'] } },
+      select: { id: true, organizationId: true, status: true },
     });
     if (stuck.length === 0) {
       await queue.close();
@@ -1731,6 +1767,18 @@ async function recoverStuckSendingBroadcasts(): Promise<void> {
 
     for (const b of stuck) {
       if (liveIds.has(b.id)) continue;
+
+      // A 'canceling' broadcast whose worker died mid-cancel: finish the
+      // cancel instead of resuming the send.
+      if (b.status === 'canceling') {
+        await prisma.broadcastChat.updateMany({
+          where: { broadcastId: b.id, status: 'pending' },
+          data: { status: 'skipped', errorReason: 'Broadcast canceled by user' },
+        });
+        await finalizeBroadcast(b.id, b.organizationId);
+        log.info(`Finalized interrupted cancel for broadcast ${b.id}`);
+        continue;
+      }
 
       const counts = await prisma.broadcastChat.groupBy({
         by: ['status'],

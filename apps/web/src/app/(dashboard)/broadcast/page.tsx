@@ -13,6 +13,7 @@ import {
   Shield,
   Search,
   Inbox,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ import {
   useRetryBroadcast,
   useDuplicateBroadcast,
   useDeleteBroadcast,
+  useCancelBroadcast,
 } from '@/hooks/useBroadcasts';
 import { AntibanSettings } from '@/components/broadcast/AntibanSettings';
 import type { BroadcastStatus } from '@/types/broadcast';
@@ -34,6 +36,7 @@ import { Megaphone } from 'lucide-react';
 const statusTabs: Array<{ label: string; value: BroadcastStatus | null }> = [
   { label: 'All', value: null },
   { label: 'Draft', value: 'draft' },
+  { label: 'Scheduled', value: 'scheduled' },
   { label: 'Sending', value: 'sending' },
   { label: 'Sent', value: 'sent' },
   { label: 'Failed', value: 'failed' },
@@ -49,6 +52,11 @@ const statusConfig: Record<
     label: 'Sending',
     className: 'bg-amber-100 text-amber-700 animate-pulse',
   },
+  canceling: {
+    label: 'Canceling',
+    className: 'bg-amber-100 text-amber-700 animate-pulse',
+  },
+  canceled: { label: 'Canceled', className: 'bg-slate-100 text-slate-600' },
   sent: { label: 'Sent', className: 'bg-emerald-100 text-emerald-700' },
   partially_failed: {
     label: 'Partial Fail',
@@ -81,6 +89,7 @@ export default function BroadcastPage() {
   const retryMutation = useRetryBroadcast();
   const duplicateMutation = useDuplicateBroadcast();
   const deleteMutation = useDeleteBroadcast();
+  const cancelMutation = useCancelBroadcast();
 
   const broadcasts = data?.broadcasts || [];
 
@@ -97,6 +106,19 @@ export default function BroadcastPage() {
     retryMutation.mutate(id, {
       onSuccess: () => toast.success('Retrying failed messages'),
       onError: () => toast.error('Failed to retry broadcast'),
+    });
+  }
+
+  function handleCancel(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    cancelMutation.mutate(id, {
+      onSuccess: (res) =>
+        toast.success(
+          res.status === 'canceled'
+            ? 'Broadcast canceled'
+            : 'Stopping — remaining messages will not be sent',
+        ),
+      onError: (err) => toast.error(err instanceof Error ? err.message : 'Cancel failed'),
     });
   }
 
@@ -301,10 +323,22 @@ export default function BroadcastPage() {
                         {broadcast.status === 'draft' && (
                           <button
                             onClick={(e) => handleSend(broadcast.id, e)}
+                            disabled={sendMutation.isPending}
                             title="Send now"
-                            className="rounded p-1.5 text-accent hover:bg-accent-bg"
+                            className="rounded p-1.5 text-accent hover:bg-accent-bg disabled:opacity-50"
                           >
                             <Send className="h-4 w-4" />
+                          </button>
+                        )}
+                        {(broadcast.status === 'scheduled' ||
+                          broadcast.status === 'sending') && (
+                          <button
+                            onClick={(e) => handleCancel(broadcast.id, e)}
+                            disabled={cancelMutation.isPending}
+                            title={broadcast.status === 'sending' ? 'Stop sending' : 'Cancel'}
+                            className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <XCircle className="h-4 w-4" />
                           </button>
                         )}
                         {(broadcast.status === 'failed' ||

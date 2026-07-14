@@ -20,7 +20,7 @@ const NON_RETRIABLE_REASON_PREFIXES = ['unverified:', 'attachment:'] as const;
 // ─── Zod Schemas ───
 
 const broadcastStatusEnum = z.enum([
-  'draft', 'scheduled', 'sending', 'sent', 'partially_failed', 'failed',
+  'draft', 'scheduled', 'sending', 'canceling', 'sent', 'partially_failed', 'failed', 'canceled',
 ]);
 
 const listBroadcastsQuerySchema = z.object({
@@ -66,6 +66,16 @@ function sendError(reply: FastifyReply, code: string, message: string, statusCod
   return reply.status(statusCode).send({
     error: { code, message, statusCode },
   });
+}
+
+/** Push a broadcast status change to the org's connected browsers. */
+function emitBroadcastStatus(organizationId: string, broadcastId: string, status: string): void {
+  try {
+    const io = getIO();
+    io.to(`org:${organizationId}`).emit('broadcast_status', { broadcastId, status });
+  } catch {
+    // WebSocket might not be initialized in tests
+  }
 }
 
 // ─── Plugin ───
@@ -632,7 +642,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
       }
 
-      if (existing.status === 'sending') {
+      if (existing.status === 'sending' || existing.status === 'canceling') {
         return sendError(reply, 'VALIDATION_ERROR', 'Cannot delete a broadcast that is currently sending', 422);
       }
 
@@ -735,6 +745,66 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       }
 
       return reply.send({ success: true });
+    },
+  );
+
+  // ─── POST /broadcasts/:id/cancel ───
+  // Scheduled → canceled immediately (delayed job removed, recipients marked
+  // skipped). Sending → 'canceling': the worker owns the in-flight rows and
+  // bails at the next message boundary, then finalizes to 'canceled'.
+
+  fastify.post(
+    '/broadcasts/:id/cancel',
+    { preHandler: broadcastPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = idParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid broadcast id', 422);
+      }
+
+      const { id } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      // Scheduled: nothing is in flight — cancel outright.
+      const canceledScheduled = await prisma.broadcast.updateMany({
+        where: { id, organizationId, status: 'scheduled' },
+        data: { status: 'canceled' },
+      });
+      if (canceledScheduled.count > 0) {
+        const scheduledJob = await broadcastQueue.getJob(`broadcast-${id}`);
+        if (scheduledJob) await scheduledJob.remove();
+        await prisma.broadcastChat.updateMany({
+          where: { broadcastId: id, status: 'pending' },
+          data: { status: 'skipped', errorReason: 'Broadcast canceled' },
+        });
+        emitBroadcastStatus(organizationId, id, 'canceled');
+        return reply.send({ success: true, status: 'canceled' });
+      }
+
+      // Sending: flag it; the worker stops between messages and finalizes.
+      const canceling = await prisma.broadcast.updateMany({
+        where: { id, organizationId, status: 'sending' },
+        data: { status: 'canceling' },
+      });
+      if (canceling.count > 0) {
+        emitBroadcastStatus(organizationId, id, 'canceling');
+        return reply.send({ success: true, status: 'canceling' });
+      }
+
+      const broadcast = await prisma.broadcast.findUnique({ where: { id } });
+      if (!broadcast || broadcast.organizationId !== organizationId) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
+      }
+      return reply.status(409).send({
+        error: {
+          code: 'BROADCAST_NOT_CANCELABLE',
+          message: `Only scheduled or sending broadcasts can be canceled (this one is ${broadcast.status})`,
+          statusCode: 409,
+        },
+      });
     },
   );
 

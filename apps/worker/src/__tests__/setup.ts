@@ -40,6 +40,9 @@ vi.mock('../lib/prisma.js', () => {
     default: {
       broadcast: {
         findFirst: vi.fn(),
+        // The per-message cancel check and finalize read current status;
+        // null = "no cancel requested" so existing tests run unchanged.
+        findUnique: vi.fn().mockResolvedValue(null),
         // Startup recovery scans run at module import — must resolve.
         findMany: vi.fn().mockResolvedValue([]),
         update: vi.fn(),

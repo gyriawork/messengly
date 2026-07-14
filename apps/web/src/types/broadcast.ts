@@ -2,9 +2,11 @@ export type BroadcastStatus =
   | 'draft'
   | 'scheduled'
   | 'sending'
+  | 'canceling'
   | 'sent'
   | 'partially_failed'
-  | 'failed';
+  | 'failed'
+  | 'canceled';
 
 export interface Broadcast {
   id: string;

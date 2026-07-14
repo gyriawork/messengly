@@ -41,7 +41,9 @@ export function useBroadcast(id: string | undefined) {
     // A broadcast mid-send changes every few seconds; ws events are not
     // guaranteed to reach a long-lived tab, so poll while it is live.
     refetchInterval: (query) =>
-      query.state.data?.status === 'sending' ? 4000 : false,
+      query.state.data?.status === 'sending' || query.state.data?.status === 'canceling'
+        ? 4000
+        : false,
   });
 }
 
@@ -91,6 +93,19 @@ export function useRetryBroadcast() {
   return useMutation({
     mutationFn: (id: string) =>
       api.post<Broadcast>(`/api/broadcasts/${id}/retry`),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+      queryClient.invalidateQueries({ queryKey: ['broadcast', id] });
+    },
+  });
+}
+
+export function useCancelBroadcast() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ success: boolean; status: string }>(`/api/broadcasts/${id}/cancel`),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
       queryClient.invalidateQueries({ queryKey: ['broadcast', id] });

@@ -15,7 +15,9 @@ export type ChatStatus = (typeof CHAT_STATUSES)[number];
 export const CHAT_TYPES = ['direct', 'group', 'channel'] as const;
 export type ChatType = (typeof CHAT_TYPES)[number];
 
-export const BROADCAST_STATUSES = ['draft', 'scheduled', 'sending', 'sent', 'partially_failed', 'failed'] as const;
+// 'canceling' is transient: the user asked to stop a live send and the worker
+// bails at the next message boundary, landing on terminal 'canceled'.
+export const BROADCAST_STATUSES = ['draft', 'scheduled', 'sending', 'canceling', 'sent', 'partially_failed', 'failed', 'canceled'] as const;
 export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
 
 export const BROADCAST_CHAT_STATUSES = ['pending', 'sent', 'failed', 'retrying', 'retry_exhausted'] as const;

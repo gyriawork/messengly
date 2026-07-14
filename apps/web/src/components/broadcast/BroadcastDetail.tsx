@@ -25,6 +25,7 @@ import {
   useRetryBroadcast,
   useDuplicateBroadcast,
   useDeleteBroadcast,
+  useCancelBroadcast,
 } from '@/hooks/useBroadcasts';
 import type { Broadcast, BroadcastChat, BroadcastStatus } from '@/types/broadcast';
 
@@ -83,6 +84,16 @@ const statusConfig: Record<
     className: 'bg-amber-100 text-amber-700 animate-pulse',
     icon: <Send className="h-4 w-4" />,
   },
+  canceling: {
+    label: 'Canceling',
+    className: 'bg-amber-100 text-amber-700 animate-pulse',
+    icon: <XCircle className="h-4 w-4" />,
+  },
+  canceled: {
+    label: 'Canceled',
+    className: 'bg-slate-100 text-slate-600',
+    icon: <XCircle className="h-4 w-4" />,
+  },
   sent: {
     label: 'Sent',
     className: 'bg-emerald-100 text-emerald-700',
@@ -133,6 +144,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   const retryMutation = useRetryBroadcast();
   const duplicateMutation = useDuplicateBroadcast();
   const deleteMutation = useDeleteBroadcast();
+  const cancelMutation = useCancelBroadcast();
 
   if (isLoading) {
     return (
@@ -220,6 +232,27 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
               Download list
             </button>
           )}
+          {(broadcast.status === 'scheduled' || broadcast.status === 'sending') && (
+            <button
+              onClick={() =>
+                cancelMutation.mutate(id, {
+                  onSuccess: (res) =>
+                    toast.success(
+                      res.status === 'canceled'
+                        ? 'Broadcast canceled'
+                        : 'Stopping — remaining messages will not be sent',
+                    ),
+                  onError: (err) =>
+                    toast.error(err instanceof Error ? err.message : 'Cancel failed'),
+                })
+              }
+              disabled={cancelMutation.isPending}
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+            >
+              <XCircle className="h-4 w-4" />
+              {broadcast.status === 'sending' ? 'Stop sending' : 'Cancel'}
+            </button>
+          )}
           {(broadcast.status === 'failed' ||
             broadcast.status === 'partially_failed') && (
             <button
@@ -292,7 +325,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
           <div
             className={cn(
               'h-full rounded-full transition-all duration-500',
-              broadcast.status === 'sending'
+              broadcast.status === 'sending' || broadcast.status === 'canceling'
                 ? 'bg-amber-400 bg-[linear-gradient(45deg,rgba(255,255,255,.3)_25%,transparent_25%,transparent_50%,rgba(255,255,255,.3)_50%,rgba(255,255,255,.3)_75%,transparent_75%)] bg-[length:1rem_1rem] motion-safe:animate-stripe-slide'
                 : failed > 0
                   ? 'bg-gradient-to-r from-emerald-500 to-emerald-500'
@@ -315,7 +348,10 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
         )}
       </div>
 
-      <DeliveryLog chats={allChats} isLive={broadcast.status === 'sending'} />
+      <DeliveryLog
+        chats={allChats}
+        isLive={broadcast.status === 'sending' || broadcast.status === 'canceling'}
+      />
 
       {/* Per-messenger breakdown */}
       {messengerBreakdown.length > 0 && (
@@ -699,6 +735,8 @@ function buildTimeline(broadcast: Broadcast) {
   const isFailed =
     broadcast.status === 'failed' ||
     broadcast.status === 'partially_failed';
+  const isCanceled =
+    broadcast.status === 'canceled' || broadcast.status === 'canceling';
 
   const items = [
     {
@@ -714,7 +752,7 @@ function buildTimeline(broadcast: Broadcast) {
     },
     {
       label: broadcast.scheduledAt ? 'Scheduled' : 'Ready to send',
-      completed: currentIndex >= 1 || broadcast.status === 'sending' || broadcast.status === 'sent' || isFailed,
+      completed: currentIndex >= 1 || broadcast.status === 'sending' || broadcast.status === 'sent' || isFailed || isCanceled,
       active: broadcast.status === 'scheduled',
       time: broadcast.scheduledAt
         ? new Date(broadcast.scheduledAt).toLocaleString('en-GB', {
@@ -727,18 +765,20 @@ function buildTimeline(broadcast: Broadcast) {
     },
     {
       label: 'Sending',
-      completed: broadcast.status === 'sent' || broadcast.status === 'partially_failed',
-      active: broadcast.status === 'sending',
+      completed: broadcast.status === 'sent' || broadcast.status === 'partially_failed' || broadcast.status === 'canceled',
+      active: broadcast.status === 'sending' || broadcast.status === 'canceling',
       time: undefined,
     },
     {
-      label: isFailed
-        ? broadcast.status === 'partially_failed'
-          ? 'Partially Failed'
-          : 'Failed'
-        : 'Delivered',
+      label: isCanceled
+        ? 'Canceled'
+        : isFailed
+          ? broadcast.status === 'partially_failed'
+            ? 'Partially Failed'
+            : 'Failed'
+          : 'Delivered',
       completed: broadcast.status === 'sent',
-      active: isFailed,
+      active: isFailed || isCanceled,
       time: broadcast.sentAt
         ? new Date(broadcast.sentAt).toLocaleString('en-GB', {
             month: 'short',
