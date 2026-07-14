@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo } from 'react';
 import {
   useQuery,
   useMutation,
@@ -16,6 +17,8 @@ import type {
 interface ChatsResponse {
   chats: Chat[];
   total: number;
+  /** Org-wide reachability counts, independent of the filter bar. */
+  statusCounts?: Record<string, number>;
 }
 
 interface MessagesResponse {
@@ -40,6 +43,57 @@ export function useChats(filters?: ChatFilters) {
       );
     },
   });
+}
+
+const ALL_CHATS_PAGE_SIZE = 500;
+
+/**
+ * Loads the WHOLE chat list, page by page, instead of one capped request.
+ * The old `limit: 1000` fetch silently truncated orgs with more chats; this
+ * keeps loading pages in the background until `total` is reached, so
+ * client-side sorting, filtering and select-all always see every chat.
+ */
+export function useAllChats(filters?: Omit<ChatFilters, 'limit'>) {
+  const query = useInfiniteQuery({
+    queryKey: ['chats', 'all', filters],
+    queryFn: async ({ pageParam }: { pageParam: number }) => {
+      const params = new URLSearchParams();
+      if (filters?.search) params.set('search', filters.search);
+      if (filters?.messenger) params.set('messenger', filters.messenger);
+      if (filters?.status) params.set('status', filters.status);
+      if (filters?.owner) params.set('owner', filters.owner);
+      if (filters?.tagId) params.set('tagId', filters.tagId);
+      params.set('page', String(pageParam));
+      params.set('limit', String(ALL_CHATS_PAGE_SIZE));
+      return api.get<ChatsResponse>(`/api/chats?${params.toString()}`);
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.chats.length, 0);
+      return loaded < lastPage.total && lastPage.chats.length > 0 ? pages.length + 1 : undefined;
+    },
+  });
+
+  // Drain remaining pages automatically — the caller just sees the list grow.
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const chats = useMemo(
+    () => (query.data?.pages ?? []).flatMap((p) => p.chats),
+    [query.data],
+  );
+  const firstPage = query.data?.pages[0];
+
+  return {
+    chats,
+    total: firstPage?.total ?? 0,
+    statusCounts: firstPage?.statusCounts ?? {},
+    isLoading: query.isLoading,
+    /** True while later pages are still streaming in. */
+    isLoadingMore: Boolean(hasNextPage || isFetchingNextPage),
+  };
 }
 
 export function useChat(id: string | undefined) {

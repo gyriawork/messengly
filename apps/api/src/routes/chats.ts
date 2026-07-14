@@ -130,7 +130,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         where.tags = { some: { tagId } };
       }
 
-      const [chats, total] = await Promise.all([
+      const [chats, total, statusGroups] = await Promise.all([
         prisma.chat.findMany({
           where,
           include: {
@@ -156,7 +156,17 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           take: limit,
         }),
         prisma.chat.count({ where }),
+        // Org-wide reachability summary (ignores the filter bar) — saves the
+        // frontend a second full-list query just to count active/inactive.
+        prisma.chat.groupBy({
+          by: ['status'],
+          where: { organizationId, deletedAt: null },
+          _count: true,
+        }),
       ]);
+
+      const statusCounts: Record<string, number> = {};
+      for (const g of statusGroups) statusCounts[g.status] = g._count;
 
       const result = chats.map((chat) => ({
         id: chat.id,
@@ -195,7 +205,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         updatedAt: chat.updatedAt,
       }));
 
-      const response = { chats: result, total, page, limit };
+      const response = { chats: result, total, page, limit, statusCounts };
       await cacheSet(ck, response, 60);
       return reply.send(response);
     },

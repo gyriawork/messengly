@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useChats } from '@/hooks/useChats';
+import { useAllChats } from '@/hooks/useChats';
 import {
   useCreateBroadcast,
   useUpdateBroadcast,
@@ -102,9 +102,9 @@ export function BroadcastWizard() {
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
-  // Load all chats (not the default 50) so every imported chat is selectable
-  // as a broadcast recipient — matches the limit used by the Chats page.
-  const { data: chatsData } = useChats({ limit: 1000 });
+  // Stream in ALL chats page by page so every imported chat is selectable as
+  // a recipient — a hard limit here would silently drop recipients past it.
+  const { chats: loadedChats } = useAllChats();
   const { data: templatesData } = useTemplates();
   const { data: tagsData } = useTags();
   const tags = tagsData?.tags ?? [];
@@ -117,7 +117,7 @@ export function BroadcastWizard() {
 
   // Inactive chats were marked unreachable by "Update chats" — a broadcast to
   // them is guaranteed to fail, so they are not offered as recipients.
-  const allChats = (chatsData?.chats || []).filter((c) => c.status !== 'inactive');
+  const allChats = loadedChats.filter((c) => c.status !== 'inactive');
 
   const form = useForm<BroadcastFormData>({
     resolver: zodResolver(broadcastSchema),

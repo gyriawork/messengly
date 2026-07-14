@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useLayoutEffect } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search,
@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/dates';
 import { downloadXls } from '@/lib/xls';
-import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
+import { useChats, useAllChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -532,6 +532,25 @@ function GroupRow({
 
 // ─── Main Page ───
 
+// Grows the rendered window when scrolled into view. With thousands of chats
+// loaded, only ~100 rows mount at a time — the rest appear as you scroll.
+function LoadMoreSentinel({ onVisible }: { onVisible: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) onVisible();
+      },
+      { rootMargin: '600px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onVisible]);
+  return <div ref={ref} className="h-8" />;
+}
+
 export default function ChatsPage() {
   const router = useRouter();
   // Only the superadmin manages chats (import / assign / tag / delete).
@@ -590,27 +609,26 @@ export default function ChatsPage() {
 
   const { data: tagsData } = useTags();
 
-  const { data, isLoading } = useChats({
+  // Streams ALL pages in — no more silent truncation at 1000 chats.
+  const {
+    chats,
+    total,
+    statusCounts: serverStatusCounts,
+    isLoading,
+    isLoadingMore,
+  } = useAllChats({
     search: debouncedSearch || undefined,
     messenger: messengerFilter,
     status: statusFilter || undefined,
     owner: ownerFilter || undefined,
     tagId: tagFilter || undefined,
-    limit: 1000,
   });
 
-  const chats = data?.chats ?? [];
-  const total = data?.total ?? 0;
-
-  // Reachability summary over ALL chats, independent of the filter bar.
-  const { data: allData } = useChats({ limit: 1000 });
-  const statusCounts = useMemo(() => {
-    const all = allData?.chats ?? [];
-    return {
-      active: all.filter((c) => c.status === 'active').length,
-      inactive: all.filter((c) => c.status === 'inactive').length,
-    };
-  }, [allData]);
+  // Reachability summary comes from the server now (org-wide, filter-independent).
+  const statusCounts = {
+    active: serverStatusCounts['active'] ?? 0,
+    inactive: serverStatusCounts['inactive'] ?? 0,
+  };
 
   const sorted = useMemo<ChatRow[]>(() => {
     // 1. Apply chat-type filter (existing logic).
@@ -681,6 +699,16 @@ export default function ChatsPage() {
     // narrows `chats` for that input, so adding it would only cause redundant
     // recomputes.
   }, [chats, chatTypeFilter, sortBy, sortDir]);
+
+  // Windowed rendering over the fully-loaded list: only ~100 rows mount at a
+  // time; scrolling grows the window. Keeps the DOM small at 1000+ chats.
+  const [visibleCount, setVisibleCount] = useState(100);
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [debouncedSearch, messengerFilter, statusFilter, ownerFilter, tagFilter, chatTypeFilter, sortBy, sortDir]);
+  const growWindow = useCallback(() => setVisibleCount((c) => c + 100), []);
+  const visibleRows = sorted.slice(0, visibleCount);
+  const hasMoreRows = sorted.length > visibleRows.length;
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -950,7 +978,7 @@ export default function ChatsPage() {
             }
           />
         )}
-        {sorted.map((row) => {
+        {visibleRows.map((row) => {
           if (isChatGroup(row)) {
             const cfg = messengerConfig.gmail;
             const groupChatIds = row.chats.map((c) => c.id);
@@ -1002,6 +1030,7 @@ export default function ChatsPage() {
             </div>
           );
         })}
+        {hasMoreRows && <LoadMoreSentinel onVisible={growWindow} />}
       </div>
 
       {/* Table */}
@@ -1101,7 +1130,7 @@ export default function ChatsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sorted.map((row) => {
+              {visibleRows.map((row) => {
                 if (isChatGroup(row)) {
                   return <GroupRow key={`group-${row.domain}`} group={row} selectedIds={selectedIds} onToggleGroup={toggleGroup} compact={compactView} />;
                 }
@@ -1210,6 +1239,13 @@ export default function ChatsPage() {
                   </tr>
                 );
               })}
+              {hasMoreRows && (
+                <tr>
+                  <td colSpan={9} className="p-0">
+                    <LoadMoreSentinel onVisible={growWindow} />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
           </div>
