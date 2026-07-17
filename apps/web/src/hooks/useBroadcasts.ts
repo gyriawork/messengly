@@ -175,7 +175,7 @@ export function useBroadcastAnalytics(period: '7d' | '30d' | '90d') {
   });
 }
 
-export function useAntibanSettings() {
+export function useAntibanSettings(options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ['antiban-settings'],
     queryFn: async () => {
@@ -186,6 +186,9 @@ export function useAntibanSettings() {
       ) as AntibanSettings[];
       return { settings };
     },
+    // The broadcast wizard polls so its duration estimate tracks settings
+    // edited elsewhere (another tab, the settings panel) near-live.
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

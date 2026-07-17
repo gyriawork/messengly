@@ -35,8 +35,9 @@ import {
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useTags } from '@/hooks/useTags';
 import type { MessengerType } from '@/types/chat';
-import type { BroadcastAttachment } from '@/types/broadcast';
+import type { BroadcastAttachment, AntibanSettings } from '@/types/broadcast';
 import { api } from '@/lib/api';
+import { estimateMessenger, formatDuration, formatFinishTime } from '@/lib/broadcast-estimate';
 
 const messengerMeta: Record<
   string,
@@ -195,7 +196,9 @@ export function BroadcastWizard() {
   // A broadcast is one day's send, so a messenger cannot deliver more than its
   // daily anti-ban limit in one go — the rest would stall. Block the wizard
   // until the operator raises the limit or trims recipients.
-  const { data: antibanData } = useAntibanSettings();
+  // Poll every 10s so the Review-step duration estimate follows settings
+  // changes made in the Broadcast Settings panel without a reload.
+  const { data: antibanData } = useAntibanSettings({ refetchInterval: 10_000 });
   const dailyLimits = useMemo(() => {
     const map: Record<string, number> = {};
     for (const st of antibanData?.settings ?? []) map[st.messenger] = st.maxMessagesPerDay;
@@ -211,6 +214,26 @@ export function BroadcastWizard() {
     }
     return out;
   }, [groupedSelected, dailyLimits]);
+
+  // Live duration estimate per messenger, driven by the same anti-ban settings
+  // the worker will use. Recomputes whenever recipients change or the settings
+  // query refreshes (e.g. after editing Broadcast Settings), so the numbers on
+  // the Review step always match the current configuration.
+  const pacingByMessenger = useMemo(() => {
+    const map: Record<string, AntibanSettings> = {};
+    for (const st of antibanData?.settings ?? []) map[st.messenger] = st;
+    return map;
+  }, [antibanData]);
+  const estimates = useMemo(() => {
+    const perMessenger = Object.entries(groupedSelected).map(([messenger, chats]) => ({
+      messenger,
+      count: chats.length,
+      ...estimateMessenger(messenger, chats.length, pacingByMessenger[messenger]),
+    }));
+    // Messengers send in parallel — the broadcast ends with the slowest one.
+    const totalSeconds = perMessenger.reduce((m, e) => Math.max(m, e.seconds), 0);
+    return { perMessenger, totalSeconds };
+  }, [groupedSelected, pacingByMessenger]);
 
   async function handleNext() {
     if (step === 0) {
@@ -892,51 +915,70 @@ export function BroadcastWizard() {
               Review Your Broadcast
             </h3>
 
-            {/* Name & Message */}
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="text-xs font-medium uppercase text-slate-400">
-                Broadcast Name
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {name}
-              </p>
-              <p className="mt-4 text-xs font-medium uppercase text-slate-400">
-                Message
-              </p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
-                {messageText}
-              </p>
-            </div>
-
-            {/* Recipients */}
+            {/* Recipients + duration estimate — the numbers the operator
+                actually checks before hitting Send, so they come first. */}
+            {(() => {
+              const startAt =
+                scheduleType === 'later' && scheduledAt ? new Date(scheduledAt) : new Date();
+              const finishAt = new Date(startAt.getTime() + estimates.totalSeconds * 1000);
+              return (
             <div className="rounded-lg border border-slate-200 p-4">
               <p className="text-xs font-medium uppercase text-slate-400">
                 Recipients ({selectedChatIds.length} chats)
               </p>
               <div className="mt-3 space-y-2">
-                {Object.entries(groupedSelected).map(
-                  ([messenger, chats]) => {
-                    const meta = messengerMeta[messenger];
-                    return (
-                      <div key={messenger} className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            'rounded-full px-2 py-0.5 text-xs font-medium',
-                            meta?.bgClass,
-                            meta?.textClass,
-                          )}
-                        >
-                          {meta?.label}
+                {estimates.perMessenger.map((e) => {
+                  const meta = messengerMeta[e.messenger];
+                  return (
+                    <div key={e.messenger} className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          meta?.bgClass,
+                          meta?.textClass,
+                        )}
+                      >
+                        {meta?.label}
+                      </span>
+                      <span className="text-sm text-slate-600">
+                        {e.count} chat{e.count > 1 ? 's' : ''}
+                      </span>
+                      <span className="text-xs text-slate-400">·</span>
+                      <span className="text-sm text-slate-500">
+                        ~{formatDuration(e.seconds)}
+                      </span>
+                      {e.dailyCapHit && (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          daily limit: {e.sentToday} today, {e.count - e.sentToday} next day
                         </span>
-                        <span className="text-sm text-slate-600">
-                          {chats.length} chat{chats.length > 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    );
-                  },
-                )}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+              {estimates.totalSeconds > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-sm">
+                  <span className="text-slate-500">
+                    Total (messengers run in parallel):{' '}
+                    <span className="font-semibold text-slate-800">
+                      ~{formatDuration(estimates.totalSeconds)}
+                    </span>
+                  </span>
+                  <span className="text-slate-500">
+                    Estimated finish:{' '}
+                    <span className="font-semibold text-slate-800">
+                      {formatFinishTime(finishAt)}
+                    </span>
+                  </span>
+                </div>
+              )}
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                Based on your current Broadcast Settings — change the pacing there and this
+                estimate updates.
+              </p>
             </div>
+              );
+            })()}
 
             {/* Schedule */}
             <div className="rounded-lg border border-slate-200 p-4">
@@ -958,6 +1000,22 @@ export function BroadcastWizard() {
                         },
                       )}`
                     : 'No time selected'}
+              </p>
+            </div>
+
+            {/* Name & Message */}
+            <div className="rounded-lg border border-slate-200 p-4">
+              <p className="text-xs font-medium uppercase text-slate-400">
+                Broadcast Name
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {name}
+              </p>
+              <p className="mt-4 text-xs font-medium uppercase text-slate-400">
+                Message
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                {messageText}
               </p>
             </div>
           </div>
