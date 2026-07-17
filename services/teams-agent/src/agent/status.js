@@ -46,7 +46,24 @@ async function getStatus({ force = false } = {}) {
     const ready = await lock.withLock(async () => {
       const page = await browser.ensurePage();
       await checkSession(page);
-      return chatListRendered(page);
+      if (await chatListRendered(page)) return true;
+
+      // The page can be stuck after an interrupted load: checkSession skips
+      // navigation when the URL already points at Teams, so a half-loaded
+      // page would stay "expired" forever. Force ONE hard reload before
+      // declaring the session dead.
+      logger.info('Chat list not rendered — forcing a reload before the verdict');
+      await page.goto(S.TEAMS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => {});
+      const url = page.url();
+      if (url.includes('login.microsoftonline.com') || url.includes('login.live.com')) return false;
+      // waitFor actually waits (isVisible returns immediately) — give the
+      // freshly reloaded app time to boot its chat list.
+      return page
+        .locator(S.sidebar)
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false);
     });
     cached = {
       status: ready ? 'active' : 'expired',
