@@ -368,12 +368,14 @@ export function BroadcastWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
+    // Full-height, full-width shell: the step card fills the content area and
+    // scrolls internally; header, step chips and nav buttons stay put.
+    <div className="flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-6">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-4 shrink-0">
         <button
           onClick={() => router.push('/broadcast')}
-          className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+          className="mb-2 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Broadcasts
@@ -384,7 +386,7 @@ export function BroadcastWizard() {
       </div>
 
       {/* Step Indicator */}
-      <div className="mb-8 flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="mb-4 flex shrink-0 items-center gap-2 overflow-x-auto pb-1">
         {STEPS.map((s, i) => {
           const Icon = s.icon;
           const isCurrent = i === step;
@@ -428,10 +430,11 @@ export function BroadcastWizard() {
       </div>
 
       {/* Step Content */}
-      <div className="rounded-lg bg-white p-6 shadow-xs">
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg bg-white p-6 shadow-xs md:p-8">
         {/* Step 1: Compose */}
         {step === 0 && (
-          <div className="space-y-5 motion-safe:animate-step-in">
+          <div className="grid gap-6 motion-safe:animate-step-in xl:grid-cols-[minmax(0,1fr)_380px] xl:gap-10">
+            <div className="space-y-5">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Broadcast Name
@@ -459,6 +462,7 @@ export function BroadcastWizard() {
               <textarea
                 {...register('messageText')}
                 rows={8}
+                style={{ minHeight: 'max(280px, 44vh)' }}
                 placeholder="Type your broadcast message here..."
                 className={cn(
                   'w-full resize-none rounded-lg border-[1.5px] bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:outline-none focus:ring-2 focus:ring-accent/15',
@@ -486,6 +490,9 @@ export function BroadcastWizard() {
               </div>
             </div>
 
+            </div>
+
+            <div className="space-y-5">
             {/* Template selector */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -571,6 +578,7 @@ export function BroadcastWizard() {
                 <Paperclip className="h-4 w-4" />
                 {isUploading ? 'Uploading...' : 'Attach files'}
               </button>
+            </div>
             </div>
           </div>
         )}
@@ -720,7 +728,7 @@ export function BroadcastWizard() {
               name="chatIds"
               control={control}
               render={() => (
-                <div className="max-h-[400px] overflow-auto rounded-lg border border-slate-200">
+                <div className="max-h-[calc(100dvh-430px)] min-h-[320px] overflow-auto rounded-lg border border-slate-200">
                   {filteredChats.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-400">
                       No chats found. Bring some in from the Import section
@@ -915,6 +923,8 @@ export function BroadcastWizard() {
               Review Your Broadcast
             </h3>
 
+            <div className="grid gap-6 xl:grid-cols-2 xl:gap-8">
+            <div className="space-y-6">
             {/* Recipients + duration estimate — the numbers the operator
                 actually checks before hitting Send, so they come first. */}
             {(() => {
@@ -1003,6 +1013,8 @@ export function BroadcastWizard() {
               </p>
             </div>
 
+            </div>
+
             {/* Name & Message */}
             <div className="rounded-lg border border-slate-200 p-4">
               <p className="text-xs font-medium uppercase text-slate-400">
@@ -1018,12 +1030,13 @@ export function BroadcastWizard() {
                 {messageText}
               </p>
             </div>
+            </div>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-4 flex shrink-0 items-center justify-between">
         <button
           onClick={step === 0 ? () => router.push('/broadcast') : handleBack}
           className="flex items-center gap-1.5 rounded px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
