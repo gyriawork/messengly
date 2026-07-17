@@ -781,9 +781,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   // under-collect the list — one flaky scan must not flip statuses. Each scan
   // that misses a chat bumps its `missedScans` counter; a scan that finds it
   // resets the counter. Only chats at `missedScans >= 2` are deactivated.
+  // On top of that, a scan that saw fewer than half of the known-active chats
+  // is treated as partial and hands out no penalties at all.
   //
-  // Runs synchronously: the slowest messenger is Teams (a browser scan,
-  // ~10-60 s), which is acceptable for a button with a spinner.
+  // Runs synchronously within the request, but messengers are scanned in
+  // parallel — total time is the slowest messenger (Teams browser scan, up to
+  // a few minutes on large sidebars), acceptable for a button with a spinner.
 
   fastify.post(
     '/chats/refresh-statuses',
@@ -800,17 +803,20 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         distinct: ['messenger'],
       });
 
-      const results: Record<string, { checked: number; activated: number; deactivated: number }> = {};
+      const results: Record<string, { checked: number; activated: number; deactivated: number; partialScan?: boolean }> = {};
       const errors: Record<string, string> = {};
 
-      for (const { messenger } of orgChats) {
+      // Messengers are independent — scan them in parallel. Teams is a slow
+      // browser scan; running the API-based messengers alongside it makes the
+      // whole refresh take as long as the slowest one, not the sum.
+      const refreshOne = async (messenger: string): Promise<void> => {
         const integration = await prisma.integration.findFirst({
           where: { messenger, organizationId, status: 'connected' },
           orderBy: { createdAt: 'asc' },
         });
         // A disconnected messenger is simply not checkable — that is not an
         // error, its chats just keep their current status.
-        if (!integration) continue;
+        if (!integration) return;
 
         let reachable: Set<string>;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -824,7 +830,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         } catch (err) {
           // A failed check proves nothing about the chats — leave them alone.
           errors[messenger] = err instanceof Error ? err.message : 'Failed to list chats';
-          continue;
+          return;
         } finally {
           try { await adapter?.disconnect(); } catch { /* ignore */ }
         }
@@ -837,12 +843,23 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         const presentIds = chats
           .filter((c) => reachable.has(c.externalChatId))
           .map((c) => c.id);
+
+        // Partial-scan guard: if the scan saw fewer than half of the chats we
+        // currently believe are active, the scan itself is suspect (Teams
+        // sidebar under-collected, messenger hiccup) — sightings still count,
+        // but nobody gets a missed-scan penalty from a scan we don't trust.
+        // Without this, a few bad scans in a row mass-deactivate the org.
+        const activeCount = chats.filter((c) => c.status === 'active').length;
+        const partialScan = activeCount >= 10 && presentIds.length < activeCount * 0.5;
+
         // The same scan tells us how many chats exist that were never
         // imported — that feeds the "new chats pending" banner.
         const importedIds = new Set(chats.map((c) => c.externalChatId));
         const newIds = [...reachable].filter((extId) => !importedIds.has(extId));
-        await setPendingImports(organizationId, messenger, newIds.length);
-        await syncDiscoveredChats(organizationId, messenger, newIds.map((externalChatId) => ({ externalChatId })));
+        if (!partialScan) {
+          await setPendingImports(organizationId, messenger, newIds.length);
+          await syncDiscoveredChats(organizationId, messenger, newIds.map((externalChatId) => ({ externalChatId })));
+        }
 
         const activateIds = chats
           .filter((c) => c.status === 'inactive' && reachable.has(c.externalChatId))
@@ -861,7 +878,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         }
 
         let deactivated = 0;
-        if (missedIds.length > 0) {
+        if (missedIds.length > 0 && !partialScan) {
           // Increment BEFORE deactivating: a chat missed for the first time
           // must end this run at missedScans=1 and still active.
           await prisma.chat.updateMany({
@@ -879,8 +896,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           checked: chats.length,
           activated: activateIds.length,
           deactivated,
+          ...(partialScan ? { partialScan: true } : {}),
         };
-      }
+      };
+
+      await Promise.allSettled(orgChats.map(({ messenger }) => refreshOne(messenger)));
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 

@@ -18,8 +18,15 @@
 
 const S = require('./selectors');
 
-const MAX_SCROLL_ROUNDS = 50;
-const MAX_STABLE_ROUNDS = 3;
+// Teams shows only the ~100 most recent conversations instantly; older ones
+// lazy-load from the server as you scroll, often with multi-second gaps. The
+// old 3×1s patience quit at the first such gap, so scans capped out at ~100
+// chats and everything older kept getting flagged unreachable. Patience is
+// now ~12s of no growth before giving up, and the round cap covers 1000+
+// chats. Worst-case full scan is ~2-3 min — well under the HTTP timeouts.
+const MAX_SCROLL_ROUNDS = 150;
+const MAX_STABLE_ROUNDS = 8;
+const ROUND_WAIT_MS = 1500;
 
 /**
  * Read chats from the sidebar, deduped by conversation id, in DOM order.
@@ -128,7 +135,8 @@ async function findChatById(page, threadId) {
     try {
       await sidebar.evaluate((el) => el.scrollBy(0, 600));
     } catch { break; }
-    await page.waitForTimeout(400);
+    // Old chats lazy-load in bursts; give each scroll step time to fetch.
+    await page.waitForTimeout(800);
   }
 
   return { found: false };
@@ -164,7 +172,7 @@ async function collectAllChats(page) {
     try {
       await sidebar.evaluate((el) => el.scrollBy(0, 600));
     } catch { break; }
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(ROUND_WAIT_MS);
   }
 
   return [...byId.values()];
