@@ -72,7 +72,10 @@ export function AntibanSettings() {
   function handleSave() {
     updateMutation.mutate(current, {
       onSuccess: () => toast.success('Settings saved'),
-      onError: () => toast.error('Failed to save settings'),
+      // Surface the real reason (validation text, network failure) — a bare
+      // "failed" hides whether it's the input or the connection.
+      onError: (err) =>
+        toast.error(err instanceof Error && err.message ? err.message : 'Failed to save settings'),
     });
   }
 

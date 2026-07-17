@@ -689,6 +689,15 @@ export function BroadcastWizard() {
                   {(tagFilter || messengerFilter || chatSearch) ? ' filtered' : ''}
                 </button>
               )}
+              {selectedChatIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setValue('chatIds', [], { shouldValidate: true })}
+                  className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                >
+                  Clear all {selectedChatIds.length}
+                </button>
+              )}
             </div>
 
             {/* Selected chips */}

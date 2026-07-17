@@ -201,6 +201,9 @@ export function useUpdateAntiban() {
         `/api/settings/antiban/${settings.messenger}`,
         settings,
       ),
+    // The PATCH is an idempotent upsert — one silent retry rides out a
+    // transient network blip or an API container swap during a deploy.
+    retry: 1,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['antiban-settings'] });
     },
