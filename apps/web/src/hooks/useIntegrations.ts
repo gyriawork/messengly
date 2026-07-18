@@ -103,6 +103,15 @@ export function useGmailOAuthAvailable() {
   });
 }
 
+/** Whether "Sign in with Google" should show on the login page. */
+export function useGoogleLoginStatus() {
+  return useQuery({
+    queryKey: ['google-login-status'],
+    queryFn: () => api.get<{ available: boolean }>('/api/auth/google/status'),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+}
+
 export function useUpdateIntegrationSettings() {
   const qc = useQueryClient();
   return useMutation({

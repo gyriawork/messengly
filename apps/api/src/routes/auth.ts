@@ -43,7 +43,7 @@ interface TokenUser {
   organizationId: string | null;
 }
 
-function generateAccessToken(user: TokenUser): string {
+export function generateAccessToken(user: TokenUser): string {
   return jwt.sign(
     {
       id: user.id,
@@ -57,11 +57,11 @@ function generateAccessToken(user: TokenUser): string {
   );
 }
 
-function generateRefreshToken(): string {
+export function generateRefreshToken(): string {
   return randomUUID();
 }
 
-async function storeRefreshToken(userId: string, token: string): Promise<void> {
+export async function storeRefreshToken(userId: string, token: string): Promise<void> {
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_SECONDS * 1000);
   await prisma.refreshToken.create({
     data: { token, userId, expiresAt },
@@ -86,7 +86,7 @@ const loginSchema = z.object({
 
 // ─── Cookie helper ───
 
-function setRefreshTokenCookie(reply: FastifyReply, token: string): void {
+export function setRefreshTokenCookie(reply: FastifyReply, token: string): void {
   reply.setCookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

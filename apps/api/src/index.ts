@@ -7,6 +7,7 @@ import multipart from '@fastify/multipart';
 import compress from '@fastify/compress';
 import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
+import authGoogleRoutes from './routes/auth-google.js';
 import organizationRoutes from './routes/organizations.js';
 import orgMessengerConfigRoutes from './routes/org-messenger-config.js';
 import userRoutes from './routes/users.js';
@@ -140,6 +141,7 @@ fastify.addContentTypeParser(
 await fastify.register(webhookRoutes, { prefix: '/api' });
 
 await fastify.register(authRoutes, { prefix: '/api/auth' });
+await fastify.register(authGoogleRoutes, { prefix: '/api/auth' });
 await fastify.register(organizationRoutes, { prefix: '/api/organizations' });
 await fastify.register(orgMessengerConfigRoutes, { prefix: '/api/organizations' });
 await fastify.register(userRoutes, { prefix: '/api/users' });
