@@ -62,14 +62,30 @@ function sendError(reply: FastifyReply, code: string, message: string, statusCod
 }
 
 /**
- * Verify a chat exists and belongs to the user's organization.
- * Returns the chat or sends an error response and returns null.
+ * Task 6/10: whether the caller can see every chat in the org, or only the
+ * ones linked to them via ChatOwner. Mirrors chats.ts's canViewAllChats —
+ * DB-checked fresh, never trusted from the JWT.
+ */
+async function canViewAllChats(request: FastifyRequest): Promise<boolean> {
+  if (request.user.role === 'admin' || request.user.role === 'superadmin') return true;
+  const record = await prisma.user.findUnique({
+    where: { id: request.user.id },
+    select: { canViewAllChats: true },
+  });
+  return record?.canViewAllChats ?? false;
+}
+
+/**
+ * Verify a chat exists, belongs to the user's organization, and — for a
+ * restricted caller (canViewAllChats=false) — is one of their own linked
+ * chats. Returns the chat or sends an error response and returns null.
  */
 async function verifyChat(
   chatId: string,
-  organizationId: string | null,
+  request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string; importedById: string | null; ownerId: string | null } | null> {
+  const organizationId = request.user.organizationId;
   if (!organizationId) {
     sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
     return null;
@@ -88,6 +104,17 @@ async function verifyChat(
   if (chat.organizationId !== organizationId) {
     sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You do not have access to this chat', 403);
     return null;
+  }
+
+  if (!(await canViewAllChats(request))) {
+    const owned = await prisma.chatOwner.findUnique({
+      where: { chatId_userId: { chatId: chat.id, userId: request.user.id } },
+    });
+    // 404, not 403 — a restricted caller shouldn't learn the chat exists at all.
+    if (!owned) {
+      sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${chatId} not found`, 404);
+      return null;
+    }
   }
 
   return chat;
@@ -111,7 +138,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       const { cursor, limit } = parsed.data;
 
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       // Build cursor-based query
@@ -217,7 +244,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       const { text, replyToMessageId, attachments } = parsed.data;
 
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       // User role can only send messages in chats they imported or own
@@ -661,7 +688,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       }
 
       // Verify target chat
-      const targetChat = await verifyChat(targetChatId, request.user.organizationId, reply);
+      const targetChat = await verifyChat(targetChatId, request, reply);
       if (!targetChat) return;
 
       // Create forwarded message in target chat
@@ -760,7 +787,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       const { q, limit } = parsed.data;
 
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       const messages = await prisma.message.findMany({
@@ -797,7 +824,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       const { emoji } = parsed.data;
 
       // Verify chat access
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       // Verify message exists in this chat
@@ -904,7 +931,7 @@ if (msg?.externalMessageId && msg.chat) {
       const { chatId, messageId } = request.params as { chatId: string; messageId: string };
 
       // Verify chat access
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       // Verify message exists in this chat
@@ -949,7 +976,7 @@ if (msg?.externalMessageId && msg.chat) {
       const { chatId, messageId, emoji } = request.params as { chatId: string; messageId: string; emoji: string };
 
       // Verify chat access
-      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      const chat = await verifyChat(chatId, request, reply);
       if (!chat) return;
 
       // Verify message exists in this chat

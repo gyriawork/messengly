@@ -8,6 +8,7 @@ import { messageSyncQueue } from '../lib/queue.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
+import { resolveIntegration } from '../lib/integration-resolver.js';
 import { setPendingImports, syncDiscoveredChats, type PendingImports } from '../lib/pending-imports.js';
 import { getIO } from '../websocket/index.js';
 
@@ -18,7 +19,8 @@ const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']
 const listChatsQuerySchema = z.object({
   messenger: messengerEnum.optional(),
   status: z.enum(['active', 'read-only', 'inactive']).optional(),
-  owner: z.string().min(1).max(100).optional(), // free-text owner name filter
+  owner: z.string().min(1).max(100).optional(), // free-text owner name filter (legacy, quietly deprecated by ownerId)
+  ownerId: z.string().uuid().optional(), // filter to chats linked (ChatOwner) to this user
   search: z.string().min(1).max(200).optional(),
   tagId: z.string().uuid().optional(),
   scope: z.enum(['org', 'my']).optional(),
@@ -68,14 +70,43 @@ function getOrgId(request: FastifyRequest): string | null {
   return request.user.organizationId;
 }
 
+/**
+ * Task 6/10: whether the caller can see every chat in the org, or only the
+ * ones linked to them via ChatOwner. Admin/superadmin always see everything;
+ * a plain `user` needs canViewAllChats (DB-checked fresh, same pattern as
+ * rbac.ts requirePermission — never trust a JWT claim for this).
+ */
+async function canViewAllChats(request: FastifyRequest): Promise<boolean> {
+  if (request.user.role === 'admin' || request.user.role === 'superadmin') return true;
+  const record = await prisma.user.findUnique({
+    where: { id: request.user.id },
+    select: { canViewAllChats: true },
+  });
+  return record?.canViewAllChats ?? false;
+}
+
+/**
+ * Resolve the effective ChatOwner filter for a request: an unrestricted
+ * caller optionally narrows to a requested ownerId; a restricted caller is
+ * always forced to their own chats regardless of what ownerId they asked for.
+ */
+async function resolveOwnerFilter(
+  request: FastifyRequest,
+  requestedOwnerId: string | undefined,
+): Promise<{ canViewAll: boolean; effectiveOwnerId: string | undefined }> {
+  const canViewAll = await canViewAllChats(request);
+  return { canViewAll, effectiveOwnerId: canViewAll ? requestedOwnerId : request.user.id };
+}
+
 // ─── Plugin ───
 
 export default async function chatRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  // Chat management — importing from messengers, editing, deleting, bulk ops —
-  // is messenger administration, locked to superadmin. Regular users get
-  // read-only access (GET endpoints) so they can pick broadcast recipients.
+  // Bulk-deleting chats is destructive and stays superadmin-only. Editing a
+  // single chat (owner/status/tags) and queuing a history backfill are
+  // regular admin-level org management (Task 3/4 widened this).
   const superadminPreHandlers = [authenticate, requireMinRole('superadmin')];
+  const adminPreHandlers = [authenticate, requireMinRole('admin')];
 
   // ─── GET /chats ───
 
@@ -88,15 +119,20 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
       }
 
-      const { messenger, status, owner, search, tagId, scope, page, limit } = parsed.data;
+      const { messenger, status, owner, ownerId, search, tagId, scope, page, limit } = parsed.data;
 
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const { canViewAll, effectiveOwnerId } = await resolveOwnerFilter(request, ownerId);
+
+      // scope/canViewAll change what the query returns for the SAME params, so
+      // both must be in the cache key — a prior bug here let scope=my leak a
+      // cached scope=default (or vice versa) within the 60s TTL.
       const queryHash = createHash('md5')
-        .update(JSON.stringify({ messenger, status, owner, search, tagId, page, limit, userId: request.user.id }))
+        .update(JSON.stringify({ messenger, status, owner, search, tagId, scope, page, limit, userId: request.user.id, effectiveOwnerId }))
         .digest('hex')
         .slice(0, 12);
 
@@ -113,6 +149,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       // filter still narrows the list to chats the caller imported themselves.
       if (scope === 'my') {
         where.importedById = request.user.id;
+      }
+
+      // Task 10: an explicit ownerId filter, or a forced self-filter for a
+      // restricted caller (canViewAllChats=false) — see resolveOwnerFilter().
+      if (effectiveOwnerId) {
+        where.owners = { some: { userId: effectiveOwnerId } };
       }
 
       if (messenger) where.messenger = messenger;
@@ -140,6 +182,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             owner: {
               select: { id: true, name: true },
             },
+            owners: {
+              select: { userId: true, user: { select: { name: true } } },
+            },
             messages: {
               take: 1,
               orderBy: { createdAt: 'desc' },
@@ -156,11 +201,16 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           take: limit,
         }),
         prisma.chat.count({ where }),
-        // Org-wide reachability summary (ignores the filter bar) — saves the
-        // frontend a second full-list query just to count active/inactive.
+        // Org-wide reachability summary (ignores the filter bar) — but NOT the
+        // visibility restriction: a restricted caller must only ever see
+        // counts for their own chats, matching the list they're shown.
         prisma.chat.groupBy({
           by: ['status'],
-          where: { organizationId, deletedAt: null },
+          where: {
+            organizationId,
+            deletedAt: null,
+            ...(canViewAll ? {} : { owners: { some: { userId: request.user.id } } }),
+          },
           _count: true,
         }),
       ]);
@@ -181,6 +231,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         owner: chat.owner
           ? { id: chat.owner.id, name: chat.owner.name }
           : null,
+        // Every user who can currently reach this chat via their own
+        // connection (Task 11 — many-to-many chat<->owner).
+        owners: chat.owners.map((o) => ({ userId: o.userId, name: o.user.name })),
         importedById: chat.importedById,
         messageCount: chat.messageCount,
         lastActivityAt: chat.lastActivityAt,
@@ -228,8 +281,18 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      // Task 10: a restricted caller (canViewAllChats=false) can't read a
+      // chat outside their own links even by guessing its id — 404, not 403,
+      // so the response doesn't confirm the chat exists at all.
+      const { canViewAll } = await resolveOwnerFilter(request, undefined);
+
       const chat = await prisma.chat.findFirst({
-        where: { id, organizationId, deletedAt: null },
+        where: {
+          id,
+          organizationId,
+          deletedAt: null,
+          ...(canViewAll ? {} : { owners: { some: { userId: request.user.id } } }),
+        },
         include: {
           tags: {
             include: { tag: true },
@@ -292,7 +355,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.patch(
     '/chats/:id',
-    { preHandler: superadminPreHandlers },
+    { preHandler: adminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -515,6 +578,14 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           if (name && existing.name === externalChatId) {
             await prisma.chat.update({ where: { id: existing.id }, data: { name } });
           }
+          // Task 11: re-importing a chat that already exists (e.g. a second
+          // user's connected account can also reach it) links the CALLER as
+          // an additional owner instead of creating a duplicate Chat row.
+          await prisma.chatOwner.upsert({
+            where: { chatId_userId: { chatId: existing.id, userId: request.user.id } },
+            create: { chatId: existing.id, userId: request.user.id },
+            update: {},
+          });
           imported.push({ id: existing.id, name: name || existing.name, externalChatId });
           continue;
         }
@@ -528,6 +599,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             organizationId,
             importedById: request.user.id,
             ownerId: request.user.id,
+            owners: { create: { userId: request.user.id } },
           },
         });
         imported.push({ id: chat.id, name: chat.name, externalChatId });
@@ -568,12 +640,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
       const userId = request.user.id;
 
-      // Resolve the organization's connected integration (typically connected
-      // by the superadmin) so any user can import chats with history from it.
-      const integration = await prisma.integration.findFirst({
-        where: { messenger, organizationId, status: 'connected' },
-        orderBy: { createdAt: 'asc' },
-      });
+      // Resolve the integration this import runs through: the caller's own
+      // personal connection if they have one (Task 3/4 self-connect), else
+      // the org's oldest connected row — unchanged from pre-v2.2 behavior
+      // for orgs where only the shared/admin-connected account exists.
+      const integration = await resolveIntegration(messenger, organizationId, { userId });
 
       if (!integration) {
         return sendError(
@@ -646,6 +717,17 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
               // Update name if stored as raw ID
               ...(chatInfo.name !== chatInfo.externalChatId ? { name: chatInfo.name } : {}),
             },
+          });
+
+          // Task 11: link the importing user as an owner regardless of
+          // whether the chat was just created or already existed (a second
+          // user's own connection reaching the same chat) — never a
+          // duplicate Chat row, and integrationId ties the link to this
+          // connection so disconnecting it later removes only this link.
+          await prisma.chatOwner.upsert({
+            where: { chatId_userId: { chatId: chat.id, userId } },
+            create: { chatId: chat.id, userId, integrationId: integration.id },
+            update: {},
           });
 
           // 2. Fetch recent messages (50)
@@ -812,29 +894,41 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       // browser scan; running the API-based messengers alongside it makes the
       // whole refresh take as long as the slowest one, not the sum.
       const refreshOne = async (messenger: string): Promise<void> => {
-        const integration = await prisma.integration.findFirst({
+        // Task 3/4 made per-user connections possible, so more than one
+        // connected integration can now exist for the same messenger+org. A
+        // chat is reachable if ANY of them still sees it — scanning only the
+        // oldest (as before) would wrongly deactivate chats that only a
+        // second user's personal account can still reach.
+        const integrations = await prisma.integration.findMany({
           where: { messenger, organizationId, status: 'connected' },
           orderBy: { createdAt: 'asc' },
         });
         // A disconnected messenger is simply not checkable — that is not an
         // error, its chats just keep their current status.
-        if (!integration) return;
+        if (integrations.length === 0) return;
 
-        let reachable: Set<string>;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let adapter: any;
-        try {
-          const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-          adapter = await createAdapter(messenger, creds, { organizationId });
-          await adapter.connect();
-          const chats: Array<{ externalChatId: string }> = await adapter.listChats();
-          reachable = new Set(chats.map((c) => c.externalChatId));
-        } catch (err) {
-          // A failed check proves nothing about the chats — leave them alone.
-          errors[messenger] = err instanceof Error ? err.message : 'Failed to list chats';
+        const reachable = new Set<string>();
+        const failures: string[] = [];
+        for (const integration of integrations) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let adapter: any;
+          try {
+            const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+            adapter = await createAdapter(messenger, creds, { organizationId });
+            await adapter.connect();
+            const chats: Array<{ externalChatId: string }> = await adapter.listChats();
+            for (const c of chats) reachable.add(c.externalChatId);
+          } catch (err) {
+            failures.push(err instanceof Error ? err.message : 'Failed to list chats');
+          } finally {
+            try { await adapter?.disconnect(); } catch { /* ignore */ }
+          }
+        }
+        // Every connected account failed to scan — no signal at all, leave
+        // chats alone (byte-identical to the single-integration failure path).
+        if (failures.length === integrations.length) {
+          errors[messenger] = failures[0];
           return;
-        } finally {
-          try { await adapter?.disconnect(); } catch { /* ignore */ }
         }
 
         const chats = await prisma.chat.findMany({
@@ -916,7 +1010,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/:id/load-full-history',
-    { preHandler: superadminPreHandlers },
+    { preHandler: adminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {

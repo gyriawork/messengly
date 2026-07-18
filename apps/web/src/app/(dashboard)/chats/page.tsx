@@ -37,6 +37,8 @@ import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 import { useAuthStore } from '@/stores/auth';
+import { can, isAdmin } from '@/lib/permissions';
+import { useTeamUsers } from '@/hooks/useUsers';
 import { NewChatsBanner } from '@/components/chats/NewChatsBanner';
 
 // ─── Constants ───
@@ -560,6 +562,13 @@ export default function ChatsPage() {
   // Only the superadmin manages chats (import / assign / tag / delete).
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
+  const user = useAuthStore((s) => s.user);
+  // Task 10: the owner-user dropdown is only meaningful for someone who can
+  // actually see more than their own chats. Admin+ always can; a plain user
+  // needs canViewAllChats — without it, the server forces every request back
+  // to their own chats anyway, so showing the picker would just be confusing.
+  const canFilterByOwner = isAdmin(user) || can(user, 'canViewAllChats');
+  const { data: teamUsers } = useTeamUsers();
 
   // Compact view: a third of the row height, no avatars. Persisted per browser.
   const [compactView, setCompactView] = useState(false);
@@ -604,7 +613,7 @@ export default function ChatsPage() {
   }, [search]);
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const [ownerIdFilter, setOwnerIdFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'createdAt' | 'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate' | 'ownerName' | 'status'>('createdAt');
@@ -624,7 +633,7 @@ export default function ChatsPage() {
     search: debouncedSearch || undefined,
     messenger: messengerFilter,
     status: statusFilter || undefined,
-    owner: ownerFilter || undefined,
+    ownerId: ownerIdFilter || undefined,
     tagId: tagFilter || undefined,
   });
 
@@ -709,7 +718,7 @@ export default function ChatsPage() {
   const [visibleCount, setVisibleCount] = useState(100);
   useEffect(() => {
     setVisibleCount(100);
-  }, [debouncedSearch, messengerFilter, statusFilter, ownerFilter, tagFilter, chatTypeFilter, sortBy, sortDir]);
+  }, [debouncedSearch, messengerFilter, statusFilter, ownerIdFilter, tagFilter, chatTypeFilter, sortBy, sortDir]);
   const growWindow = useCallback(() => setVisibleCount((c) => c + 100), []);
   const visibleRows = sorted.slice(0, visibleCount);
   const hasMoreRows = sorted.length > visibleRows.length;
@@ -886,13 +895,21 @@ export default function ChatsPage() {
           ))}
         </select>
 
-        {/* Owner filter */}
-        <input
-          value={ownerFilter ?? ''}
-          onChange={(e) => setOwnerFilter(e.target.value || null)}
-          placeholder="Filter by owner..."
-          className="rounded-lg border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-full sm:w-36"
-        />
+        {/* Owner filter — Task 10: which connected-account owner's chats to show */}
+        {canFilterByOwner && (
+          <select
+            value={ownerIdFilter ?? ''}
+            onChange={(e) => setOwnerIdFilter(e.target.value || null)}
+            className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+          >
+            <option value="">All chats</option>
+            {(teamUsers ?? [])
+              .filter((u) => u.status === 'active')
+              .map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+          </select>
+        )}
 
         {/* Sort dropdown */}
         <select

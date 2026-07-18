@@ -85,6 +85,8 @@ export interface ChatFilters {
   messenger?: MessengerType | null;
   status?: string;
   owner?: string;
+  /** Filter to chats linked (ChatOwner) to this user id — Task 10's owner dropdown. */
+  ownerId?: string;
   tagId?: string;
   limit?: number;
 }

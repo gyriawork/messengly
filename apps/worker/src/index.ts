@@ -1903,75 +1903,95 @@ async function runChatDiscovery(): Promise<void> {
     orderBy: { createdAt: 'asc' },
   });
 
-  // One integration per org+messenger (mirrors how the API picks them).
-  const seen = new Set<string>();
+  // Group by org+messenger — Task 3/4 made more than one connected account
+  // per org+messenger possible (an admin's shared connection plus one or
+  // more users' personal ones), so a chat only one of them can reach must
+  // still show up as "pending" rather than being missed because we only
+  // ever scanned the first (oldest) connection.
+  const groups = new Map<string, { organizationId: string; messenger: string; integrations: typeof integrations }>();
   for (const integration of integrations) {
     const key = integration.organizationId + ':' + integration.messenger;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const group = groups.get(key) ?? { organizationId: integration.organizationId, messenger: integration.messenger, integrations: [] };
+    group.integrations.push(integration);
+    groups.set(key, group);
+  }
 
+  for (const { organizationId, messenger, integrations: groupIntegrations } of groups.values()) {
     try {
-      const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-      const adapter = await createAdapter(integration.messenger, credentials, { organizationId: integration.organizationId });
-      try {
-        await adapter.connect();
-        const scanned = await adapter.listChats();
-        const imported = await prisma.chat.findMany({
-          where: { organizationId: integration.organizationId, messenger: integration.messenger, deletedAt: null },
-          select: { externalChatId: true },
-        });
-        const importedIds = new Set(imported.map((c) => c.externalChatId));
-        const fresh = scanned.filter((c: { externalChatId: string; name?: string }) => !importedIds.has(c.externalChatId));
-        const newCount = fresh.length;
-
-        // Keep DiscoveredChat in step so firstSeenAt stays stable for the UI.
-        // Transactional: a concurrent manual scan must never observe (or
-        // leave behind) a half-replaced set, which would reset firstSeenAt.
-        await prisma.$transaction(async (tx) => {
-          await tx.discoveredChat.deleteMany({
-            where: {
-              organizationId: integration.organizationId,
-              messenger: integration.messenger,
-              externalChatId: { notIn: fresh.map((c: { externalChatId: string }) => c.externalChatId) },
-            },
-          });
-          if (fresh.length > 0) {
-            await tx.discoveredChat.createMany({
-              data: fresh.map((c: { externalChatId: string; name?: string }) => ({
-                organizationId: integration.organizationId,
-                messenger: integration.messenger,
-                externalChatId: c.externalChatId,
-                name: c.name ?? null,
-              })),
-              skipDuplicates: true,
-            });
+      const scannedMap = new Map<string, { externalChatId: string; name?: string }>();
+      for (const integration of groupIntegrations) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let adapter: any;
+        try {
+          const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+          adapter = await createAdapter(messenger, credentials, { organizationId });
+          await adapter.connect();
+          const scanned = await adapter.listChats();
+          for (const c of scanned as Array<{ externalChatId: string; name?: string }>) {
+            scannedMap.set(c.externalChatId, c);
           }
-        });
-
-        // Atomic per-messenger jsonb update — concurrent scans for different
-        // messengers each touch only their own key instead of clobbering the
-        // whole object (mirrors apps/api/src/lib/pending-imports.ts).
-        if (newCount > 0) {
-          const entry = JSON.stringify({ count: newCount, at: new Date().toISOString() });
-          await prisma.$executeRaw`
-            UPDATE "Organization"
-            SET "pendingImports" = jsonb_set(COALESCE("pendingImports", '{}'::jsonb), ARRAY[${integration.messenger}], ${entry}::jsonb, true)
-            WHERE id = ${integration.organizationId}
-          `;
-        } else {
-          await prisma.$executeRaw`
-            UPDATE "Organization"
-            SET "pendingImports" = COALESCE("pendingImports", '{}'::jsonb) - ${integration.messenger}
-            WHERE id = ${integration.organizationId}
-          `;
+        } catch (err) {
+          // One connection failing doesn't invalidate the others' sightings.
+          log.warn(`Chat discovery: one ${messenger} connection failed to scan`, { organizationId, error: String(err) });
+        } finally {
+          try { await adapter?.disconnect(); } catch { /* ignore */ }
         }
-        log.info(`Chat discovery: ${integration.messenger} has ${newCount} new chat(s)`, { organizationId: integration.organizationId });
-      } finally {
-        try { await adapter.disconnect(); } catch { /* ignore */ }
       }
+
+      const scanned = [...scannedMap.values()];
+      const imported = await prisma.chat.findMany({
+        where: { organizationId, messenger, deletedAt: null },
+        select: { externalChatId: true },
+      });
+      const importedIds = new Set(imported.map((c) => c.externalChatId));
+      const fresh = scanned.filter((c) => !importedIds.has(c.externalChatId));
+      const newCount = fresh.length;
+
+      // Keep DiscoveredChat in step so firstSeenAt stays stable for the UI.
+      // Transactional: a concurrent manual scan must never observe (or
+      // leave behind) a half-replaced set, which would reset firstSeenAt.
+      await prisma.$transaction(async (tx) => {
+        await tx.discoveredChat.deleteMany({
+          where: {
+            organizationId,
+            messenger,
+            externalChatId: { notIn: fresh.map((c) => c.externalChatId) },
+          },
+        });
+        if (fresh.length > 0) {
+          await tx.discoveredChat.createMany({
+            data: fresh.map((c) => ({
+              organizationId,
+              messenger,
+              externalChatId: c.externalChatId,
+              name: c.name ?? null,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      });
+
+      // Atomic per-messenger jsonb update — concurrent scans for different
+      // messengers each touch only their own key instead of clobbering the
+      // whole object (mirrors apps/api/src/lib/pending-imports.ts).
+      if (newCount > 0) {
+        const entry = JSON.stringify({ count: newCount, at: new Date().toISOString() });
+        await prisma.$executeRaw`
+          UPDATE "Organization"
+          SET "pendingImports" = jsonb_set(COALESCE("pendingImports", '{}'::jsonb), ARRAY[${messenger}], ${entry}::jsonb, true)
+          WHERE id = ${organizationId}
+        `;
+      } else {
+        await prisma.$executeRaw`
+          UPDATE "Organization"
+          SET "pendingImports" = COALESCE("pendingImports", '{}'::jsonb) - ${messenger}
+          WHERE id = ${organizationId}
+        `;
+      }
+      log.info(`Chat discovery: ${messenger} has ${newCount} new chat(s)`, { organizationId });
     } catch (err) {
       // A failed scan proves nothing — leave the previous counts alone.
-      log.warn(`Chat discovery failed for ${integration.messenger}`, { organizationId: integration.organizationId, error: String(err) });
+      log.warn(`Chat discovery failed for ${messenger}`, { organizationId, error: String(err) });
     }
   }
 }

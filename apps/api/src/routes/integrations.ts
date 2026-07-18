@@ -435,8 +435,14 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         data: { status: 'disconnected' },
       });
 
+      // Task 11: drop only the ownership links THIS connection produced —
+      // chats stay visible to any other owner (a different user's own
+      // connection, or a manual/legacy link with no integrationId).
+      await prisma.chatOwner.deleteMany({ where: { integrationId: integration.id } });
+
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({
         integration: sanitizeIntegration(updated),
@@ -491,8 +497,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         data: { status: 'disconnected' },
       });
 
+      // Task 11: same cleanup as the self-service disconnect route — only
+      // this connection's links go, other owners keep their chats.
+      await prisma.chatOwner.deleteMany({ where: { integrationId: integration.id } });
+
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${integration.userId}`));
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ integration: sanitizeIntegration(updated) });
     },

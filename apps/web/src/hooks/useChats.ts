@@ -35,6 +35,7 @@ export function useChats(filters?: ChatFilters) {
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
       if (filters?.owner) params.set('owner', filters.owner);
+      if (filters?.ownerId) params.set('ownerId', filters.ownerId);
       if (filters?.tagId) params.set('tagId', filters.tagId);
       if (filters?.limit) params.set('limit', String(filters.limit));
       const query = params.toString();
@@ -62,6 +63,7 @@ export function useAllChats(filters?: Omit<ChatFilters, 'limit'>) {
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
       if (filters?.owner) params.set('owner', filters.owner);
+      if (filters?.ownerId) params.set('ownerId', filters.ownerId);
       if (filters?.tagId) params.set('tagId', filters.tagId);
       params.set('page', String(pageParam));
       params.set('limit', String(ALL_CHATS_PAGE_SIZE));
