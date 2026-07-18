@@ -8,6 +8,7 @@ import compress from '@fastify/compress';
 import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import organizationRoutes from './routes/organizations.js';
+import orgMessengerConfigRoutes from './routes/org-messenger-config.js';
 import userRoutes from './routes/users.js';
 import messageRoutes from './routes/messages.js';
 import chatRoutes from './routes/chats.js';
@@ -140,6 +141,7 @@ await fastify.register(webhookRoutes, { prefix: '/api' });
 
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(organizationRoutes, { prefix: '/api/organizations' });
+await fastify.register(orgMessengerConfigRoutes, { prefix: '/api/organizations' });
 await fastify.register(userRoutes, { prefix: '/api/users' });
 await fastify.register(messageRoutes, { prefix: '/api' });
 await fastify.register(chatRoutes, { prefix: '/api' });

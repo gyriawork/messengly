@@ -1,25 +1,57 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Settings, Building2, User } from 'lucide-react';
+import { Settings, Building2, User, Plug, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
+import { IntegrationsTab, messengers } from '@/components/settings/IntegrationsTab';
 import { WorkspaceTab } from '@/components/settings/WorkspaceTab';
 import { ProfileTab } from '@/components/settings/ProfileTab';
 import { OrganizationTab } from '@/components/settings/OrganizationTab';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
+import { can } from '@/lib/permissions';
 
-type Tab = 'integrations' | 'workspace' | 'organization' | 'profile';
+type Tab = 'integrations' | 'my-messengers' | 'workspace' | 'organization' | 'profile';
 
 const ALL_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'integrations', label: 'Integrations', icon: Settings },
+  { id: 'my-messengers', label: 'My Messengers', icon: Plug },
   { id: 'workspace', label: 'Workspace', icon: Building2 },
   { id: 'organization', label: 'Organization', icon: Building2 },
   { id: 'profile', label: 'Profile', icon: User },
 ];
+
+/** Entry point for a plain user with canSelfConnectMessengers — links out to
+ * each messenger's own settings page (Task 4). Admin+ uses the fuller
+ * Integrations tab instead, so this only ever renders for a self-connecting
+ * `user`. */
+function MyMessengersTab() {
+  const visible = messengers.filter((m) => m.key !== 'teams');
+  return (
+    <div className="space-y-3">
+      {visible.map((m) => (
+        <Link
+          key={m.key}
+          href={`/settings/messengers/${m.key}`}
+          className="flex items-center justify-between rounded-xl bg-white p-4 shadow-xs transition-shadow hover:shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <MessengerIcon messenger={m.key} size={36} />
+            <div>
+              <p className="text-sm font-medium text-slate-800">{m.name}</p>
+              <p className="text-xs text-slate-500">{m.description}</p>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-slate-300" />
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 const oauthErrorMessages: Record<string, string> = {
   oauth_not_configured: 'OAuth is not configured on the server. Please use manual credential input.',
@@ -41,8 +73,9 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
 
-  // Only the superadmin manages messenger integrations. Org admins run their
-  // own team (Workspace) and branding (Organization); everyone gets Profile.
+  // Admin+ manages messenger integrations (Task 3/4 widened this from
+  // superadmin-only) — org admins run their own team (Workspace) and
+  // branding (Organization); everyone gets Profile.
   const isSuperadmin = user?.role === 'superadmin';
   const isAdmin = user?.role === 'admin';
   const canManageOrg = isSuperadmin || isAdmin;
@@ -51,7 +84,8 @@ export default function SettingsPage() {
     if (t.id === 'profile') return true;
     if (t.id === 'organization') return canBrand;
     if (t.id === 'workspace') return canManageOrg;
-    return isSuperadmin; // integrations
+    if (t.id === 'my-messengers') return !canManageOrg && can(user, 'canSelfConnectMessengers');
+    return canManageOrg; // integrations
   });
 
   // Keep the active tab valid when the role-filtered tab set changes.
@@ -117,12 +151,13 @@ export default function SettingsPage() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'integrations' && isSuperadmin && (
+        {activeTab === 'integrations' && canManageOrg && (
           <IntegrationsTab
             autoOpenMessenger={autoOpenMessenger}
             onAutoOpenHandled={() => setAutoOpenMessenger(null)}
           />
         )}
+        {activeTab === 'my-messengers' && <MyMessengersTab />}
         {activeTab === 'workspace' && canManageOrg && <WorkspaceTab />}
         {activeTab === 'organization' && canBrand && <OrganizationTab />}
         {activeTab === 'profile' && <ProfileTab />}

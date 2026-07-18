@@ -5,6 +5,7 @@ import { google } from 'googleapis';
 import prisma from '../lib/prisma.js';
 import { encryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/rbac.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
@@ -37,6 +38,16 @@ function getOrgId(request: FastifyRequest): string | null {
   return request.user.organizationId;
 }
 
+/**
+ * Scope for a newly-created Integration row (Task 3/4) — same rule as
+ * routes/integrations.ts connectScopeFor(): admin+ connecting creates an
+ * org-level shared connection; a plain `user` (gated by
+ * canSelfConnectMessengers on the authorize route) always creates their own.
+ */
+function connectScopeFor(request: FastifyRequest): 'org' | 'user' {
+  return request.user.role === 'user' ? 'user' : 'org';
+}
+
 function getAppUrl(): string {
   return process.env.APP_URL ?? 'http://localhost:3000';
 }
@@ -45,8 +56,8 @@ function getApiUrl(): string {
   return process.env.API_URL ?? `http://localhost:${process.env.PORT ?? '3001'}`;
 }
 
-async function getSlackPlatformCreds(): Promise<{ clientId: string; clientSecret: string } | null> {
-  const result = await getPlatformCredentials('slack');
+async function getSlackPlatformCreds(organizationId?: string): Promise<{ clientId: string; clientSecret: string } | null> {
+  const result = await getPlatformCredentials('slack', organizationId);
   if (!result.credentials) return null;
   const { clientId, clientSecret } = result.credentials;
   if (!clientId || !clientSecret) return null;
@@ -75,8 +86,8 @@ async function authenticateOAuthRedirect(
   return authenticate(request, reply);
 }
 
-async function getGmailPlatformCreds(): Promise<{ clientId: string; clientSecret: string; redirectUri: string } | null> {
-  const result = await getPlatformCredentials('gmail');
+async function getGmailPlatformCreds(organizationId?: string): Promise<{ clientId: string; clientSecret: string; redirectUri: string } | null> {
+  const result = await getPlatformCredentials('gmail', organizationId);
   if (!result.credentials) return null;
   const { clientId, clientSecret } = result.credentials;
   if (!clientId || !clientSecret) return null;
@@ -104,9 +115,9 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
   fastify.get(
     '/oauth/slack/authorize',
-    { preHandler: [authenticateOAuthRedirect] },
+    { preHandler: [authenticateOAuthRedirect, requirePermission('canSelfConnectMessengers')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const slackCreds = await getSlackPlatformCreds();
+      const slackCreds = await getSlackPlatformCreds(getOrgId(request) ?? undefined);
       if (!slackCreds) {
         return reply.redirect(
           `${getAppUrl()}/settings?integration=slack&status=error&error=oauth_not_configured`,
@@ -123,10 +134,13 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Generate a cryptographically random state token
       const state = randomBytes(32).toString('hex');
 
-      // Store state in Redis with user context (TTL: 10 minutes)
+      // Store state in Redis with user context (TTL: 10 minutes). scope is
+      // decided here (request.user is available) and carried through to the
+      // callback, which has no session — only the state token.
       const stateData = JSON.stringify({
         userId: request.user.id,
         organizationId,
+        scope: connectScopeFor(request),
       });
       await getRedis().set(`oauth:slack:state:${state}`, stateData, 'EX', 600);
 
@@ -212,7 +226,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Delete state token immediately (one-time use)
       await getRedis().del(redisKey);
 
-      let stateData: { userId: string; organizationId: string };
+      let stateData: { userId: string; organizationId: string; scope?: 'org' | 'user' };
       try {
         stateData = JSON.parse(stateDataRaw);
       } catch {
@@ -221,10 +235,10 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      const { userId, organizationId } = stateData;
+      const { userId, organizationId, scope = 'org' } = stateData;
 
       // Resolve platform credentials for token exchange
-      const slackCreds = await getSlackPlatformCreds();
+      const slackCreds = await getSlackPlatformCreds(organizationId);
       if (!slackCreds) {
         return reply.redirect(
           `${appUrl}/settings?integration=slack&status=error&error=oauth_not_configured`,
@@ -277,7 +291,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       // Verify the token works by connecting with the adapter
       const credentials = { token: primaryToken };
-      const adapter = await createAdapter('slack', credentials);
+      const adapter = await createAdapter('slack', credentials, { organizationId });
       try {
         await adapter.connect();
       } catch (err) {
@@ -306,7 +320,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             messenger: 'slack',
             organizationId,
             userId,
-            scope: 'org',
+            scope,
           },
         },
       });
@@ -330,6 +344,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             credentials: encryptedCredentials,
             organizationId,
             userId,
+            scope,
             connectedAt: new Date(),
           },
         });
@@ -362,8 +377,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
   fastify.get(
     '/oauth/slack/status',
     { preHandler: [authenticate] },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      const slackCreds = await getSlackPlatformCreds();
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const slackCreds = await getSlackPlatformCreds(getOrgId(request) ?? undefined);
       return reply.send({
         oauthConfigured: slackCreds !== null,
       });
@@ -392,9 +407,9 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
   fastify.get(
     '/oauth/gmail/authorize',
-    { preHandler: [authenticateOAuthRedirect] },
+    { preHandler: [authenticateOAuthRedirect, requirePermission('canSelfConnectMessengers')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const gmailCreds = await getGmailPlatformCreds();
+      const gmailCreds = await getGmailPlatformCreds(getOrgId(request) ?? undefined);
       if (!gmailCreds) {
         return reply.redirect(
           `${getAppUrl()}/settings?integration=gmail&status=error&error=oauth_not_configured`,
@@ -421,6 +436,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         userId: request.user.id,
         organizationId,
         importCount,
+        scope: connectScopeFor(request),
       });
       await getRedis().set(`oauth:gmail:state:${state}`, stateData, 'EX', 600);
 
@@ -482,7 +498,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Delete state token immediately (one-time use)
       await getRedis().del(redisKey);
 
-      let stateData: { userId: string; organizationId: string; importCount?: number };
+      let stateData: { userId: string; organizationId: string; importCount?: number; scope?: 'org' | 'user' };
       try {
         stateData = JSON.parse(stateDataRaw);
       } catch {
@@ -491,10 +507,10 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      const { userId, organizationId, importCount = 50 } = stateData;
+      const { userId, organizationId, importCount = 50, scope = 'org' } = stateData;
 
       // Resolve platform credentials for token exchange
-      const gmailCreds = await getGmailPlatformCreds();
+      const gmailCreds = await getGmailPlatformCreds(organizationId);
       if (!gmailCreds) {
         return reply.redirect(
           `${appUrl}/settings?integration=gmail&status=error&error=oauth_not_configured`,
@@ -545,7 +561,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             messenger: 'gmail',
             organizationId,
             userId,
-            scope: 'org',
+            scope,
           },
         },
       });
@@ -570,6 +586,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             credentials: encryptedCredentials,
             organizationId,
             userId,
+            scope,
             connectedAt: new Date(),
           },
         });

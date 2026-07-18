@@ -13,6 +13,9 @@ export interface Integration {
   settings?: Record<string, unknown>;
   connectedAt?: string;
   createdAt: string;
+  /** Which user connected this integration — 'org' scope for admin-connected
+   * shared accounts, 'user' scope for a personal self-connect (Task 3/4). */
+  userId: string;
 }
 
 export interface ConnectTelegramPayload {

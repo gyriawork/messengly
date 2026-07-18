@@ -3,13 +3,16 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Shield, ShieldCheck, User as UserIcon, KeyRound, Ban, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Shield, ShieldCheck, User as UserIcon, KeyRound, Ban, CheckCircle2, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { humanizeError } from '@/lib/errors';
 import { useAuthStore } from '@/stores/auth';
 import { isAdmin } from '@/lib/permissions';
 import { useTeamUsers, useUpdateTeamUser, type TeamUser } from '@/hooks/useUsers';
+import { useIntegrations, useDisconnectIntegrationById } from '@/hooks/useIntegrations';
+import { messengers } from '@/components/settings/IntegrationsTab';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { CredentialReveal } from '@/components/settings/CredentialReveal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
@@ -80,6 +83,8 @@ export default function TeamMemberPage() {
   const { data, isLoading } = useTeamUsers();
   const updateMutation = useUpdateTeamUser();
   const [resetCredentials, setResetCredentials] = useState<{ email: string; password: string } | null>(null);
+  const { data: integrationsData } = useIntegrations();
+  const disconnectById = useDisconnectIntegrationById();
 
   if (!isAdmin(currentUser)) {
     return (
@@ -243,6 +248,55 @@ export default function TeamMemberPage() {
                   disabled={updateMutation.isPending}
                 />
               </div>
+            </div>
+
+            {/* Connections */}
+            <div className="mt-6">
+              <h2 className="mb-3 text-sm font-semibold text-slate-700">Messenger connections</h2>
+              {(() => {
+                const theirs = (integrationsData?.integrations ?? []).filter((i) => i.userId === member.id);
+                if (theirs.length === 0) {
+                  return (
+                    <p className="text-sm text-slate-500">
+                      No messengers connected. {member.name} can connect their own from Settings
+                      {member.permissions.canSelfConnectMessengers ? '' : ' once you enable "Can connect own messengers" above'}.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    {theirs.map((integration) => {
+                      const info = messengers.find((m) => m.key === integration.messenger);
+                      return (
+                        <div key={integration.id} className="flex items-center justify-between rounded-xl bg-white p-4 shadow-xs">
+                          <div className="flex items-center gap-3">
+                            <MessengerIcon messenger={integration.messenger} size={32} />
+                            <div>
+                              <p className="text-sm font-medium text-slate-800">{info?.name ?? integration.messenger}</p>
+                              <p className="text-xs text-slate-500">
+                                {integration.status === 'connected' ? 'Connected' : integration.status}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() =>
+                              disconnectById.mutate(integration.id, {
+                                onSuccess: () => toast.success(`${info?.name ?? integration.messenger} disconnected`),
+                                onError: (err) => toast.error(humanizeError(err, 'Failed to disconnect')),
+                              })
+                            }
+                            disabled={disconnectById.isPending}
+                            className="flex items-center gap-1.5 rounded-lg border-[1.5px] border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Unplug className="h-3.5 w-3.5" />
+                            Disconnect
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

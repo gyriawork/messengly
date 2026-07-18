@@ -240,13 +240,17 @@ async function sendMessengerBatch(
   // correctly in every messenger (Telegram shows the raw code otherwise).
   messageText = emojify(messageText);
 
-  // Find integration credentials for this messenger + org
+  // Find integration credentials for this messenger + org. Legacy behavior
+  // (no explicit sender chosen — see Broadcast.senderConfig): the oldest
+  // connected row. orderBy matters now that per-user connections (Task 3/4)
+  // can put more than one connected row per messenger+org.
   const integration = await prisma.integration.findFirst({
     where: {
       messenger,
       organizationId,
       status: 'connected',
     },
+    orderBy: { createdAt: 'asc' },
   });
 
   let adapter;
@@ -255,7 +259,7 @@ async function sendMessengerBatch(
       const credentials = decryptCredentials<Record<string, unknown>>(
         integration.credentials as string,
       );
-      adapter = await createAdapter(messenger, credentials);
+      adapter = await createAdapter(messenger, credentials, { organizationId });
     } else {
       throw new Error(`No connected integration found for ${messenger}`);
     }
@@ -725,7 +729,7 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
   }
 
   const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-  const adapter = await createAdapter(messenger, credentials);
+  const adapter = await createAdapter(messenger, credentials, { organizationId });
 
   try {
     await adapter.connect();
@@ -968,7 +972,7 @@ async function processGmailRehydrate(job: Job<GmailRehydratePayload>): Promise<v
   }
 
   const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-  const adapter = await createAdapter('gmail', credentials);
+  const adapter = await createAdapter('gmail', credentials, { organizationId });
 
   try {
     await adapter.connect();
@@ -1381,7 +1385,7 @@ async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
   let adapter;
   try {
     const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-    adapter = await createAdapter(messenger, credentials);
+    adapter = await createAdapter(messenger, credentials, { organizationId });
     await adapter.connect();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1857,6 +1861,7 @@ async function recoverPendingChatSyncs(): Promise<void> {
           messenger: group.messenger,
           status: 'connected',
         },
+        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 
@@ -1907,7 +1912,7 @@ async function runChatDiscovery(): Promise<void> {
 
     try {
       const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-      const adapter = await createAdapter(integration.messenger, credentials);
+      const adapter = await createAdapter(integration.messenger, credentials, { organizationId: integration.organizationId });
       try {
         await adapter.connect();
         const scanned = await adapter.listChats();

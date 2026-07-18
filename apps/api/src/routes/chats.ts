@@ -587,7 +587,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       // Decrypt credentials and create adapter
       const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const adapter = await createAdapter(messenger, creds) as any;
+      const adapter = await createAdapter(messenger, creds, { organizationId }) as any;
       await adapter.connect();
 
       const io = getIO();
@@ -825,7 +825,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         let adapter: any;
         try {
           const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-          adapter = await createAdapter(messenger, creds);
+          adapter = await createAdapter(messenger, creds, { organizationId });
           await adapter.connect();
           const chats: Array<{ externalChatId: string }> = await adapter.listChats();
           reachable = new Set(chats.map((c) => c.externalChatId));
@@ -948,6 +948,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       const integration = await prisma.integration.findFirst({
         where: { messenger: chat.messenger, organizationId, status: 'connected' },
+        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 

@@ -49,6 +49,25 @@ export function useDisconnectIntegration() {
   });
 }
 
+/**
+ * Disconnect a specific integration by id, regardless of owner (Task 5: admin
+ * manages a user's connections from their Team card). A plain `user` may only
+ * target their own row — the API enforces this; useDisconnectIntegration()
+ * above (by messenger, always self) is what a self-connecting user should use.
+ */
+export function useDisconnectIntegrationById() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (integrationId: string) => {
+      return api.delete<{ integration: Integration }>(`/api/integrations/by-id/${integrationId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    },
+  });
+}
+
 export function useReconnectIntegration() {
   const queryClient = useQueryClient();
 

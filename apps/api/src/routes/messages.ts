@@ -369,7 +369,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         } else if (integration.credentials) {
           // Fallback: create a new adapter (for non-Telegram or if manager has no client)
           const creds = decryptCredentials(integration.credentials as string);
-          const adapter = await createAdapter(chat.messenger, creds);
+          const adapter = await createAdapter(chat.messenger, creds, { organizationId: chat.organizationId });
           try {
             await adapter.connect();
 
@@ -503,7 +503,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
                 }).catch(() => {});
               } else {
                 const creds = decryptCredentials(integration.credentials as string);
-                const adapter = await createAdapter(chat.messenger, creds);
+                const adapter = await createAdapter(chat.messenger, creds, { organizationId: chat.organizationId });
                 try {
                   await adapter.connect();
                   await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
@@ -595,7 +595,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
                 await tgClient.deleteMessages(delPeer, [parseInt(message.externalMessageId, 10)], { revoke: true }).catch(() => {});
               } else {
                 const creds = decryptCredentials(integration.credentials as string);
-                const adapter = await createAdapter(chat.messenger, creds);
+                const adapter = await createAdapter(chat.messenger, creds, { organizationId: chat.organizationId });
                 try {
                   await adapter.connect();
                   await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
@@ -847,7 +847,7 @@ if (msg?.externalMessageId && msg.chat) {
 
         if (integration?.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
-          const adapter = await createAdapter(msg.chat.messenger, creds);
+          const adapter = await createAdapter(msg.chat.messenger, creds, { organizationId: msg.chat.organizationId });
           if (adapter.addReaction) {
             try {
               await adapter.connect();
@@ -991,7 +991,7 @@ if (msg?.externalMessageId && msg.chat) {
 
         if (integration?.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
-          const adapter = await createAdapter(msg.chat.messenger, creds);
+          const adapter = await createAdapter(msg.chat.messenger, creds, { organizationId: msg.chat.organizationId });
           if (adapter.removeReaction) {
             try {
               await adapter.connect();

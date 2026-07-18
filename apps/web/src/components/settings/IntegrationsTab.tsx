@@ -41,13 +41,15 @@ import {
 } from '@/hooks/useIntegrations';
 import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
 import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
+import { useOrgMessengerConfig } from '@/hooks/useOrgMessengerConfig';
+import { OrgMessengerConfigCard } from './OrgMessengerConfigCard';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
 import { ConnectAndImportWizard } from './ConnectAndImportWizard';
 import { TeamsRemoteLogin } from './TeamsRemoteLogin';
 
 // ---------- Messenger metadata ----------
 
-interface MessengerInfo {
+export interface MessengerInfo {
   key: MessengerType;
   name: string;
   abbr: string;
@@ -57,7 +59,7 @@ interface MessengerInfo {
   badgeBg: string;
 }
 
-const messengers: MessengerInfo[] = [
+export const messengers: MessengerInfo[] = [
   {
     key: 'telegram',
     name: 'Telegram',
@@ -699,7 +701,7 @@ function GmailConnectForm({}: {
 
 // ---------- Connect Modal Wrapper ----------
 
-function ConnectModal({
+export function ConnectModal({
   messenger,
   onClose,
 }: {
@@ -1199,6 +1201,9 @@ interface IntegrationsTabProps {
 export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: IntegrationsTabProps = {}) {
   const { data, isLoading } = useIntegrations();
   const { data: availableData } = useAvailableIntegrations();
+  const { data: orgConfigData } = useOrgMessengerConfig();
+  // Gmail is intentionally hidden from settings/connections (Task 2).
+  const visibleOrgConfig = orgConfigData?.filter((entry) => entry.messenger !== 'gmail') ?? [];
   const connectMutation = useConnectIntegration();
   const [connectingMessenger, setConnectingMessenger] =
     useState<MessengerInfo | null>(null);
@@ -1246,6 +1251,24 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
 
   return (
     <>
+      {visibleOrgConfig.length > 0 && (
+        <div className="mb-6 space-y-4">
+          <div className="mb-2">
+            <h2 className="text-base font-semibold text-slate-900">
+              Messenger App Credentials
+            </h2>
+            <p className="text-sm text-slate-500">
+              Your organization&apos;s own API credentials (e.g. Telegram API Hash &amp; ID).
+              Falls back to the platform default when not set.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {visibleOrgConfig.map((entry) => (
+              <OrgMessengerConfigCard key={entry.messenger} entry={entry} />
+            ))}
+          </div>
+        </div>
+      )}
       <div className="space-y-4">
         <div className="mb-2">
           <h2 className="text-base font-semibold text-slate-900">

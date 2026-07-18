@@ -17,6 +17,7 @@ type SupportedMessenger = (typeof SUPPORTED_MESSENGERS)[number];
 export async function createAdapter(
   messenger: string,
   credentials: Record<string, unknown>,
+  opts?: { organizationId?: string },
 ): Promise<MessengerAdapter> {
   switch (messenger as SupportedMessenger) {
     case 'telegram': {
@@ -26,7 +27,7 @@ export async function createAdapter(
       let apiId = tgCreds.apiId;
       let apiHash = tgCreds.apiHash;
       if (!apiId || !apiHash) {
-        const platform = await getPlatformCredentials('telegram');
+        const platform = await getPlatformCredentials('telegram', opts?.organizationId);
         if (!platform.credentials) {
           throw new MessengerError('telegram', null, 'Telegram platform credentials not configured');
         }
@@ -49,7 +50,7 @@ export async function createAdapter(
       let clientId = gmailCreds.clientId;
       let clientSecret = gmailCreds.clientSecret;
       if (!clientId || !clientSecret) {
-        const platform = await getPlatformCredentials('gmail');
+        const platform = await getPlatformCredentials('gmail', opts?.organizationId);
         if (!platform.credentials) {
           throw new MessengerError('gmail', null, 'Gmail platform credentials not configured');
         }

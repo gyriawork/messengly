@@ -260,7 +260,7 @@ export class TelegramConnectionManager {
       return;
     }
 
-    const platform = await getPlatformCredentials('telegram');
+    const platform = await getPlatformCredentials('telegram', integration.organizationId);
     const apiIdRaw = platform.credentials?.apiId;
     const apiHash = platform.credentials?.apiHash;
     if (!apiIdRaw || !apiHash) {

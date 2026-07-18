@@ -4,7 +4,8 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { encryptCredentials, decryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireRole } from '../middleware/rbac.js';
+import { requirePermission, requireMinRole } from '../middleware/rbac.js';
+import { resolveIntegration } from '../lib/integration-resolver.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 // These imports may fail on some environments if native deps are missing
@@ -119,6 +120,16 @@ function getOrgId(request: FastifyRequest): string | null {
   return request.user.organizationId;
 }
 
+/**
+ * Scope for a newly-created Integration row (Task 3/4). Admin+ connecting =
+ * an org-level shared connection (matches pre-v2.2 behavior exactly). A plain
+ * `user` (only reaches here with canSelfConnectMessengers, see authPreHandlers
+ * below) always creates their own personal connection, never an org-wide one.
+ */
+function connectScopeFor(request: FastifyRequest): 'org' | 'user' {
+  return request.user.role === 'user' ? 'user' : 'org';
+}
+
 /** Return a safe integration object without raw credentials. */
 function sanitizeIntegration(integration: {
   id: string;
@@ -177,10 +188,18 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   }
 
   // Managing messenger access (connect / disconnect / pairing / import) is
-  // superadmin-only. Regular users never configure messengers — they only
-  // broadcast. Read-only status endpoints stay open to any authenticated user.
-  const authPreHandlers = [authenticate, requireRole('superadmin')];
+  // admin+, or a plain `user` with the canSelfConnectMessengers permission
+  // (Task 3/4) acting on their own personal connection — requirePermission()
+  // lets admin/superadmin through unconditionally and DB-checks the flag for
+  // everyone else. Read-only status endpoints stay open to any authenticated user.
+  const authPreHandlers = [authenticate, requirePermission('canSelfConnectMessengers')];
   const readPreHandlers = [authenticate];
+  // Teams' remote-login screen and logout act on the ONE shared browser
+  // session for the whole system (services/teams-agent) — there is no
+  // per-user Teams connection yet (that's Phase 8), so these stay admin+
+  // regardless of canSelfConnectMessengers. A self-connecting plain user
+  // must never be able to take over or sign out the org's shared Teams login.
+  const teamsAdminPreHandlers = [authenticate, requireMinRole('admin')];
 
   // ─── GET /integrations/available ───
   // Returns which messengers are available (platform credentials configured) vs unavailable.
@@ -188,13 +207,14 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   fastify.get(
     '/integrations/available',
     { preHandler: readPreHandlers },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request) ?? undefined;
       const available: string[] = [];
       const unavailable: string[] = [];
 
       await Promise.all(
         MESSENGERS.map(async (messenger) => {
-          const result = await getPlatformCredentials(messenger);
+          const result = await getPlatformCredentials(messenger, organizationId);
           if (result.source === 'none_required' || result.credentials !== null) {
             available.push(messenger);
           } else {
@@ -260,6 +280,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
+      const scope = connectScopeFor(request);
 
       // Validate credentials based on messenger type
       const credentialSchema = credentialSchemas[messenger];
@@ -280,20 +301,20 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       const credentials = bodyParsed.data as Record<string, unknown>;
 
-      // Check if integration already exists for this messenger + org + user
+      // Check if integration already exists for this messenger + org + user + scope
       const existing = await prisma.integration.findUnique({
         where: {
           messenger_organizationId_userId_scope: {
             messenger,
             organizationId,
             userId: request.user.id,
-            scope: 'org',
+            scope,
           },
         },
       });
 
       // Try to connect using the adapter to verify credentials
-      const adapter = await createAdapter(messenger, credentials);
+      const adapter = await createAdapter(messenger, credentials, { organizationId });
       try {
         await adapter.connect();
       } catch (err) {
@@ -330,6 +351,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               credentials: encryptedCredentials,
               organizationId,
               userId: request.user.id,
+              scope,
               connectedAt: new Date(),
             },
           });
@@ -397,7 +419,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Graceful disconnect is best-effort — don't block on adapter failures
       try {
         const credentials = decryptCredentials(integration.credentials as string);
-        const adapter = await createAdapter(messenger, credentials);
+        const adapter = await createAdapter(messenger, credentials, { organizationId });
         await adapter.disconnect().catch(() => {});
       } catch {
         // Disconnect failures are not critical — we still mark as disconnected
@@ -419,6 +441,60 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       return reply.send({
         integration: sanitizeIntegration(updated),
       });
+    },
+  );
+
+  // ─── DELETE /integrations/by-id/:id ───
+  // Disconnect a specific integration by id, regardless of messenger. Unlike
+  // POST /:messenger/disconnect (which only ever touches the CALLER's own
+  // row), this lets an admin+ disconnect any user's connection in their org —
+  // the mechanism behind "admin manages a user's messenger connections from
+  // their Team card" (Task 5). A plain `user` may only target their own row.
+  const integrationIdParamSchema = z.object({ id: z.string().uuid() });
+
+  fastify.delete(
+    '/integrations/by-id/:id',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = integrationIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid integration id', 422);
+      }
+      const { id } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const integration = await prisma.integration.findUnique({ where: { id } });
+      if (!integration || integration.organizationId !== organizationId) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Integration not found', 404);
+      }
+      if (request.user.role === 'user' && integration.userId !== request.user.id) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You can only disconnect your own connections', 403);
+      }
+
+      try {
+        const credentials = decryptCredentials(integration.credentials as string);
+        const adapter = await createAdapter(integration.messenger, credentials, { organizationId });
+        await adapter.disconnect().catch(() => {});
+      } catch {
+        // Best-effort — still mark disconnected below.
+      }
+
+      if (integration.messenger === 'telegram') {
+        getTelegramManager().stopListening(integration.id).catch(() => {});
+      }
+
+      const updated = await prisma.integration.update({
+        where: { id: integration.id },
+        data: { status: 'disconnected' },
+      });
+
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${integration.userId}`));
+
+      return reply.send({ integration: sanitizeIntegration(updated) });
     },
   );
 
@@ -467,7 +543,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       // Attempt reconnection
-      const adapter = await createAdapter(messenger, credentials);
+      const adapter = await createAdapter(messenger, credentials, { organizationId });
       try {
         await adapter.connect();
       } catch (err) {
@@ -582,8 +658,10 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       const { phoneNumber } = bodyParsed.data;
 
-      // Resolve platform credentials (apiId, apiHash)
-      const platformResult = await getPlatformCredentials('telegram');
+      // Resolve platform credentials (apiId, apiHash) — org-scoped first, so an
+      // org running its own Telegram app (Task 4) uses its own credentials.
+      const organizationId = getOrgId(request) ?? undefined;
+      const platformResult = await getPlatformCredentials('telegram', organizationId);
       if (!platformResult.credentials) {
         return sendError(
           reply,
@@ -668,6 +746,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
+      const scope = connectScopeFor(request);
 
       const pending = await getPendingAuth(request.user.id, phoneNumber);
       if (!pending) {
@@ -734,7 +813,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               messenger: 'telegram',
               organizationId,
               userId: request.user.id,
-              scope: 'org',
+              scope,
             },
           },
         });
@@ -757,6 +836,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               credentials: encryptedCredentials,
               organizationId,
               userId: request.user.id,
+              scope,
               connectedAt: new Date(),
             },
           });
@@ -818,11 +898,12 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
+      const scope = connectScopeFor(request);
 
       // Validate the key by connecting (apiId/apiHash resolved from platform config).
       let adapter;
       try {
-        adapter = await createAdapter('telegram', { session });
+        adapter = await createAdapter('telegram', { session }, { organizationId });
         await adapter.connect();
       } catch (err) {
         return sendError(
@@ -842,7 +923,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               messenger: 'telegram',
               organizationId,
               userId: request.user.id,
-              scope: 'org',
+              scope,
             },
           },
         });
@@ -861,6 +942,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               credentials: encryptedCredentials,
               organizationId,
               userId: request.user.id,
+              scope,
               connectedAt: new Date(),
             },
           });
@@ -905,7 +987,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const platform = await getPlatformCredentials('telegram');
+      const platform = await getPlatformCredentials('telegram', organizationId);
       if (!platform.credentials) {
         return sendError(
           reply,
@@ -917,6 +999,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       const apiId = Number(platform.credentials.apiId);
       const apiHash = platform.credentials.apiHash as string;
       const userId = request.user.id;
+      const scope = connectScopeFor(request);
 
       // Clean up any previous QR session for this user.
       const prev = qrLogins.get(userId);
@@ -971,7 +1054,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           const encryptedCredentials = encryptCredentials({ session: sessionString, phoneNumber: '' });
 
           const existing = await prisma.integration.findUnique({
-            where: { messenger_organizationId_userId_scope: { messenger: 'telegram', organizationId, userId, scope: 'org' } },
+            where: { messenger_organizationId_userId_scope: { messenger: 'telegram', organizationId, userId, scope } },
           });
           let integration;
           if (existing) {
@@ -987,6 +1070,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
                 credentials: encryptedCredentials,
                 organizationId,
                 userId,
+                scope,
                 connectedAt: new Date(),
               },
             });
@@ -1235,6 +1319,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       const userId = request.user.id;
+      const scope = connectScopeFor(request);
 
       try {
         const status = await getPairingStatus(sessionName);
@@ -1266,7 +1351,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
                 messenger: 'whatsapp',
                 organizationId,
                 userId,
-                scope: 'org',
+                scope,
               },
             },
             update: {
@@ -1282,6 +1367,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               settings: { wahaSessionName: sessionName },
               organizationId,
               userId,
+              scope,
               connectedAt: new Date(),
             },
           });
@@ -1387,7 +1473,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         // Decrypt credentials and list chats via adapter
         const decrypted = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-        const adapter = await createAdapter(messenger, decrypted);
+        const adapter = await createAdapter(messenger, decrypted, { organizationId });
 
         try {
           await adapter.connect();
@@ -1505,7 +1591,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/start',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         return reply.send(await teamsAgent.remoteStart());
@@ -1522,7 +1608,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.get(
     '/integrations/teams/remote/screenshot',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1552,7 +1638,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/click',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsClickSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'x and y must be numbers', 422);
@@ -1566,7 +1652,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/type',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsTypeSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'text must be 1–500 characters', 422);
@@ -1580,7 +1666,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/key',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsKeySchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'key is required', 422);
@@ -1598,7 +1684,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/save',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1619,7 +1705,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/stop',
-    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         return reply.send(await teamsAgent.remoteStop());
@@ -1635,7 +1721,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/logout',
-    { preHandler: authPreHandlers },
+    { preHandler: teamsAdminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
