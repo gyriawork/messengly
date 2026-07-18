@@ -26,6 +26,7 @@ model Organization {
   templates            Template[]
   tags                 Tag[]
   integrations         Integration[]
+  messengerConfigs     OrgMessengerConfig[]
   antibanSettings      AntibanSettings[]
   activityLogs         ActivityLog[]
   globalBroadcastLimits Json?   // max values admin can't exceed
@@ -45,6 +46,11 @@ model User {
   avatar           String?
   role             String   @default("user") // superadmin | admin | user
   status           String   @default("active") // active | deactivated
+  // Per-user permission toggles, managed by the org admin. Enforced in the API
+  // (not just hidden in UI). Defaults preserve pre-v2.2 behavior for existing users.
+  canCreateTags            Boolean @default(true)
+  canSelfConnectMessengers Boolean @default(false)
+  canViewAllChats          Boolean @default(true)
   lastActiveAt     DateTime?
   organizationId   String?
   organization     Organization? @relation(fields: [organizationId], references: [id])
@@ -55,6 +61,7 @@ model User {
 
   ownedChats       Chat[]   @relation("ChatOwner")
   importedChats    Chat[]   @relation("ChatImporter")
+  chatOwnerLinks   ChatOwner[] @relation("ChatOwnerLinks")
   broadcasts       Broadcast[]
   templates        Template[]
   refreshTokens    RefreshToken[]
@@ -122,6 +129,7 @@ model Chat {
   preferences      ChatPreference[]
   broadcastChats   BroadcastChat[]
   participants     ChatParticipant[]
+  owners           ChatOwner[]
 
   @@unique([externalChatId, messenger, organizationId])
   @@index([organizationId])
@@ -130,6 +138,24 @@ model Chat {
   @@index([organizationId, status]) // reachability filters + refresh-statuses
   @@index([ownerId])
   @@index([importedById])
+}
+
+// Many-to-many chat ownership. A chat is one row per org (deduped on
+// externalChatId+messenger); every user whose connected account can reach it
+// gets a link here. Disconnecting one owner's integration removes only their
+// links — the chat survives for the remaining owners.
+model ChatOwner {
+  id            String   @id @default(uuid())
+  chatId        String
+  chat          Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation("ChatOwnerLinks", fields: [userId], references: [id])
+  integrationId String?  // connection that produced this link; NULL for legacy backfill / manual assignment
+  createdAt     DateTime @default(now())
+
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@index([integrationId])
 }
 
 model ChatTag {
@@ -179,6 +205,7 @@ model DiscoveredChat {
   messenger      String
   externalChatId String
   name           String?
+  chatType       String?  // direct | group | channel | unknown; carried into Chat.chatType on import
   firstSeenAt    DateTime @default(now())
 
   @@unique([organizationId, messenger, externalChatId])
@@ -258,6 +285,9 @@ model Broadcast {
   createdById      String
   createdBy        User     @relation(fields: [createdById], references: [id])
   templateId       String?
+  // Per-messenger sending account: { [messenger]: { integrationId, sendAs?: 'bot'|'user' } }.
+  // NULL = legacy behavior (org's first connected integration per messenger).
+  senderConfig     Json?
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -328,6 +358,7 @@ model Integration {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   userId         String   // which user connected this integration
+  scope          String   @default("org") // org (shared org-level connection) | user (personal account)
   connectedAt    DateTime?
 
   // Initial sync progress (set when integration is first connected and all chats
@@ -341,7 +372,7 @@ model Integration {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  @@unique([messenger, organizationId, userId])
+  @@unique([messenger, organizationId, userId, scope])
   @@index([organizationId])
 }
 
@@ -355,6 +386,24 @@ model PlatformConfig {
   updatedBy   String?  // userId of last superadmin who modified
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Per-organization messenger app credentials (Telegram apiId/apiHash, Slack
+// clientId/secret, ...), managed by the org admin. Runtime resolution prefers
+// this over the global PlatformConfig; existing orgs are backfilled from the
+// global config so nothing breaks at cutover.
+model OrgMessengerConfig {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  messenger      String
+  credentials    Json     // encrypted via AES-256-GCM (same lib/crypto.ts as PlatformConfig)
+  enabled        Boolean  @default(true)
+  updatedBy      String?  // userId of last admin who modified
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, messenger])
 }
 
 // ─── ANTIBAN ───

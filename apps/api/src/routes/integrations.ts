@@ -283,10 +283,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Check if integration already exists for this messenger + org + user
       const existing = await prisma.integration.findUnique({
         where: {
-          messenger_organizationId_userId: {
+          messenger_organizationId_userId_scope: {
             messenger,
             organizationId,
             userId: request.user.id,
+            scope: 'org',
           },
         },
       });
@@ -729,10 +730,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         // Upsert integration
         const existing = await prisma.integration.findUnique({
           where: {
-            messenger_organizationId_userId: {
+            messenger_organizationId_userId_scope: {
               messenger: 'telegram',
               organizationId,
               userId: request.user.id,
+              scope: 'org',
             },
           },
         });
@@ -836,10 +838,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         const existing = await prisma.integration.findUnique({
           where: {
-            messenger_organizationId_userId: {
+            messenger_organizationId_userId_scope: {
               messenger: 'telegram',
               organizationId,
               userId: request.user.id,
+              scope: 'org',
             },
           },
         });
@@ -968,7 +971,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           const encryptedCredentials = encryptCredentials({ session: sessionString, phoneNumber: '' });
 
           const existing = await prisma.integration.findUnique({
-            where: { messenger_organizationId_userId: { messenger: 'telegram', organizationId, userId } },
+            where: { messenger_organizationId_userId_scope: { messenger: 'telegram', organizationId, userId, scope: 'org' } },
           });
           let integration;
           if (existing) {
@@ -1259,10 +1262,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
           const whatsappIntegration = await prisma.integration.upsert({
             where: {
-              messenger_organizationId_userId: {
+              messenger_organizationId_userId_scope: {
                 messenger: 'whatsapp',
                 organizationId,
                 userId,
+                scope: 'org',
               },
             },
             update: {
@@ -1441,7 +1445,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     });
 
     await prisma.integration.upsert({
-      where: { messenger_organizationId_userId: { messenger: 'teams', organizationId, userId } },
+      where: { messenger_organizationId_userId_scope: { messenger: 'teams', organizationId, userId, scope: 'org' } },
       update: { credentials, status: 'connected', connectedAt: new Date() },
       create: {
         messenger: 'teams',

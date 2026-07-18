@@ -302,10 +302,11 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Upsert the integration record
       const existing = await prisma.integration.findUnique({
         where: {
-          messenger_organizationId_userId: {
+          messenger_organizationId_userId_scope: {
             messenger: 'slack',
             organizationId,
             userId,
+            scope: 'org',
           },
         },
       });
@@ -540,10 +541,11 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Upsert the integration record
       const existing = await prisma.integration.findUnique({
         where: {
-          messenger_organizationId_userId: {
+          messenger_organizationId_userId_scope: {
             messenger: 'gmail',
             organizationId,
             userId,
+            scope: 'org',
           },
         },
       });
