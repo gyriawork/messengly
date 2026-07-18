@@ -13,24 +13,11 @@ const logger = require('../util/logger');
 const { ensurePage } = require('./browser');
 const { checkSession } = require('./checkSession');
 const { collectAllChats } = require('./sidebar');
+const { detectChatType } = require('./chatType');
 const lock = require('./lock');
 
 /**
- * Heuristic chat type. Teams' DOM does not tell us whether a conversation is
- * 1:1 or a group, so we guess from the display name exactly as meetsbroadcast
- * does. Unknown maps to `direct`, which is Messengly's default chat type.
- *
- * This only affects display. The attachment strategy is decided at send time by
- * probing for a file picker, not by this guess.
- */
-function guessType(name) {
-  if (name.startsWith('#')) return 'channel';
-  if (name.includes(',') || name.includes(' и ')) return 'group';
-  return 'direct';
-}
-
-/**
- * @returns {Promise<Array<{ threadId: string, name: string, type: string }>>}
+ * @returns {Promise<Array<{ threadId: string, name: string, type: 'direct'|'group'|'channel'|null }>>}
  */
 async function scanChats() {
   return lock.withLock(async () => {
@@ -43,8 +30,8 @@ async function scanChats() {
 
     return chats
       .filter((c) => c.id && c.name)
-      .map((c) => ({ threadId: c.id, name: c.name, type: guessType(c.name) }));
+      .map((c) => ({ threadId: c.id, name: c.name, type: detectChatType(c) }));
   });
 }
 
-module.exports = { scanChats, guessType };
+module.exports = { scanChats };

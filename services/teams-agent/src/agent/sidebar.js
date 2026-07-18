@@ -30,10 +30,18 @@ const ROUND_WAIT_MS = 1500;
 
 /**
  * Read chats from the sidebar, deduped by conversation id, in DOM order.
- * @returns {Promise<Array<{ id: string, name: string }>>}
+ * ariaMarker/avatarImgCount/hasGroupAvatar are raw DOM signals for
+ * chatType.js — this module only collects them, it never interprets them.
+ * @returns {Promise<Array<{ id: string, name: string, ariaMarker: 'one-on-one'|'group'|null, avatarImgCount: number, hasGroupAvatar: boolean }>>}
  */
 async function readChats(page) {
-  const rows = await page.evaluate((sel) => {
+  const rows = await page.evaluate(({ sel, avatarSel, oneOnOneMarker, groupMarker }) => {
+    const detectAriaMarker = (row) => {
+      const tokens = (row.getAttribute('aria-labelledby') || '').split(/\s+/);
+      if (tokens.includes(oneOnOneMarker)) return 'one-on-one';
+      if (tokens.includes(groupMarker)) return 'group';
+      return null;
+    };
     const parseId = (row) => {
       const v = row.getAttribute('data-fui-tree-item-value') || '';
       const afterPipe = v.split('|').pop() || '';
@@ -66,11 +74,20 @@ async function readChats(page) {
       }
       return (row.innerText || '').split('\n')[0].replace(/\s+/g, ' ').trim();
     };
+    const avatarSignals = (row) => {
+      const nodes = [...row.querySelectorAll(avatarSel)];
+      const imgCount = nodes.reduce((n, el) => n + el.querySelectorAll('img').length, 0);
+      const hasGroupAvatar = nodes.some((el) => {
+        const cls = (el.getAttribute('class') || '') + ' ' + (el.getAttribute('data-tid') || '');
+        return /group/i.test(cls) || el.querySelectorAll('img').length > 1;
+      });
+      return { avatarImgCount: imgCount, hasGroupAvatar };
+    };
     return [...document.querySelectorAll(sel)].map((row) => {
       const id = parseId(row);
-      return { id, name: nameOf(row, id) };
+      return { id, name: nameOf(row, id), ariaMarker: detectAriaMarker(row), ...avatarSignals(row) };
     });
-  }, S.chatItem);
+  }, { sel: S.chatItem, avatarSel: S.avatarNode, oneOnOneMarker: S.ariaOneOnOneMarker, groupMarker: S.ariaGroupMarker });
 
   // Dedupe by id (a favourited chat appears in "Избранное" AND "Чаты").
   const seen = new Set();

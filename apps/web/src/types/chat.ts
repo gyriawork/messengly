@@ -1,6 +1,8 @@
 export type MessengerType = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
-export type ChatType = 'direct' | 'group' | 'channel';
+// 'unknown' = the messenger couldn't determine the type (currently only Teams,
+// via DOM detection); rendered as "—" rather than guessed.
+export type ChatType = 'direct' | 'group' | 'channel' | 'unknown';
 
 export interface Chat {
   id: string;

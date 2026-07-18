@@ -467,7 +467,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   const importChatItemSchema = z.object({
     externalChatId: z.string(),
     name: z.string().optional(),
-    chatType: z.enum(['direct', 'group', 'channel']).optional(),
+    // 'unknown' = the messenger couldn't determine the type (e.g. Teams' DOM
+    // detection); rendered as "—" in the UI rather than guessed as 'direct'.
+    chatType: z.enum(['direct', 'group', 'channel', 'unknown']).optional(),
   });
 
   const importBodySchema = z.object({
@@ -522,7 +524,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             name: name || externalChatId,
             messenger,
             externalChatId,
-            chatType: (chatType as 'direct' | 'group' | 'channel') || 'direct',
+            chatType: (chatType as 'direct' | 'group' | 'channel' | 'unknown') || 'direct',
             organizationId,
             importedById: request.user.id,
             ownerId: request.user.id,
@@ -546,7 +548,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
     chats: z.array(z.object({
       externalChatId: z.string(),
       name: z.string(),
-      chatType: z.enum(['direct', 'group', 'channel']).default('direct'),
+      chatType: z.enum(['direct', 'group', 'channel', 'unknown']).default('direct'),
     })).min(1).max(200),
   });
 

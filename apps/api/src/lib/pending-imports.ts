@@ -16,7 +16,7 @@ export interface PendingImports {
 export async function syncDiscoveredChats(
   organizationId: string,
   messenger: string,
-  pendingChats: Array<{ externalChatId: string; name?: string }>,
+  pendingChats: Array<{ externalChatId: string; name?: string; chatType?: string | null }>,
 ): Promise<Record<string, string>> {
   const ids = pendingChats.map((c) => c.externalChatId);
 
@@ -31,6 +31,7 @@ export async function syncDiscoveredChats(
           messenger,
           externalChatId: c.externalChatId,
           name: c.name ?? null,
+          chatType: c.chatType ?? null,
         })),
         skipDuplicates: true,
       });

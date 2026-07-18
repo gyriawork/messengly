@@ -177,7 +177,7 @@ function ChatSelector({
                 </span>
               )}
               <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                {chat.chatType}
+                {chat.chatType === 'unknown' ? '—' : chat.chatType}
               </span>
             </label>
           );
@@ -333,7 +333,7 @@ export function ConnectAndImportWizard({
       .map((c) => ({
         externalChatId: c.externalChatId,
         name: c.name,
-        chatType: c.chatType as 'direct' | 'group' | 'channel',
+        chatType: c.chatType as 'direct' | 'group' | 'channel' | 'unknown',
       }));
 
     setStep('importing');

@@ -48,11 +48,13 @@ export default function PlatformSettingsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {(entries ?? []).map((entry, i) => (
-            <div key={entry.messenger} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
-              <PlatformConfigCard entry={entry} />
-            </div>
-          ))}
+          {(entries ?? [])
+            .filter((entry) => entry.messenger !== 'gmail') // Gmail hidden — broadcast-focused service
+            .map((entry, i) => (
+              <div key={entry.messenger} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
+                <PlatformConfigCard entry={entry} />
+              </div>
+            ))}
         </div>
       )}
     </div>

@@ -20,6 +20,21 @@ const S = {
   sidebar:       '[data-tid="simple-collab-dnd-rail"]',
   chatItem:      '[data-tid="simple-collab-dnd-rail"] [role="treeitem"][data-item-type="chat"]',
 
+  // --- Chat-type detection ---
+  // Primary signal, confirmed against a live 347-chat sidebar: every row's
+  // aria-labelledby includes one of these two tokens, and Teams sets it
+  // correctly regardless of what the display name looks like (many 2-company
+  // "X & Y Integration" names turned out to be group chats, not 1:1s — name
+  // guessing alone gets this wrong). Avatar image count was tried first and
+  // discarded: every row showed exactly 1 image/2 avatar nodes whether the
+  // chat was 1:1 or group, so it carries no discriminating signal here.
+  ariaOneOnOneMarker: 'one-on-one-chat-support-text',
+  ariaGroupMarker:    'chat-group-support-text',
+  // Kept as a secondary/defensive signal in case a future Teams rollout ever
+  // renders a distinguishable stacked avatar — chatType.js only lets this
+  // ADD confidence toward "group", never assert "direct".
+  avatarNode:    '[data-tid*="vatar"], [class*="avatar"], [class*="Avatar"]',
+
   // --- Chat view header ---
   // Multiple candidates — Teams sometimes uses h1/h2 depending on chat type/rollout.
   chatHeader:    '[data-tid="chat-title"] h2, [data-tid="chat-title"] h1, [data-tid="chat-title"] [role="heading"], [data-tid="chat-title"]',

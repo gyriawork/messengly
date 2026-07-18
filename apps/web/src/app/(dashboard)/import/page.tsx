@@ -34,7 +34,7 @@ export default function ImportPage() {
         .filter((i) => i.status === 'connected')
         .map((i) => i.messenger as MessengerType),
     ),
-  ];
+  ].filter((m) => m !== 'gmail'); // Gmail hidden — broadcast-focused service
 
   return (
     <RequireOrgContext>

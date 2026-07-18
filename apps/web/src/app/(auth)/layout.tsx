@@ -1,7 +1,3 @@
-import { MessengerIcon } from '@/components/ui/MessengerIcon';
-
-const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail', 'teams'] as const;
-
 export default function AuthLayout({
   children,
 }: {
@@ -20,19 +16,9 @@ export default function AuthLayout({
             One broadcast.
           </h1>
           <p className="mt-5 text-lg leading-relaxed text-indigo-200">
-            Bring your Telegram, Slack, WhatsApp, Gmail and MS Teams chats
-            together and send prepared messages to all of them at once.
+            Bring all your messengers together in one place and send prepared
+            messages to every chat at once.
           </p>
-          <div className="mt-8 flex items-center gap-3">
-            {MESSENGERS.map((m) => (
-              <div
-                key={m}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 p-2 backdrop-blur-sm"
-              >
-                <MessengerIcon messenger={m} size={26} />
-              </div>
-            ))}
-          </div>
         </div>
 
         <p className="text-sm text-indigo-300/70">

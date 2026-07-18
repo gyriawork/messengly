@@ -1199,10 +1199,14 @@ export default function ChatsPage() {
 
                     {/* Type */}
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                        <TypeIcon className="h-3.5 w-3.5" />
-                        {chat.chatType.charAt(0).toUpperCase() + chat.chatType.slice(1)}
-                      </span>
+                      {chat.chatType === 'unknown' ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                          <TypeIcon className="h-3.5 w-3.5" />
+                          {chat.chatType.charAt(0).toUpperCase() + chat.chatType.slice(1)}
+                        </span>
+                      )}
                     </td>
 
                     {/* Owner */}

@@ -43,8 +43,8 @@ export interface TeamsChat {
   /** Stable Teams conversation id. Becomes Chat.externalChatId. */
   threadId: string;
   name: string;
-  /** Heuristic: direct | group | channel */
-  type: string;
+  /** direct | group | channel, or null when the agent couldn't determine it. */
+  type: 'direct' | 'group' | 'channel' | null;
 }
 
 // ─── Types: Messaging ───

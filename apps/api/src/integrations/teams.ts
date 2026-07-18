@@ -29,9 +29,14 @@ function absoluteUrl(url: string): string {
   return `${base}${url}`;
 }
 
-/** Teams exposes only `direct | group | channel` shaped names; anything else is direct. */
-function toChatType(type: string): string {
-  return type === 'group' || type === 'channel' ? type : 'direct';
+/**
+ * The agent returns null when its DOM-based detection (see teams-agent's
+ * chatType.js) couldn't determine the type. That must surface as 'unknown',
+ * never be guessed into 'direct' — Chat.chatType stays NOT NULL, so 'unknown'
+ * is the sentinel the UI renders as "—".
+ */
+function toChatType(type: 'direct' | 'group' | 'channel' | null): string {
+  return type ?? 'unknown';
 }
 
 export class TeamsAdapter implements MessengerAdapter {
