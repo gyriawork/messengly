@@ -8,6 +8,10 @@ export type BroadcastStatus =
   | 'failed'
   | 'canceled';
 
+/** Per-messenger sending account (Task 7/8). Absent/omitted messenger key =
+ * legacy behavior — the org's default connected account for that messenger. */
+export type BroadcastSenderConfig = Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }>;
+
 export interface Broadcast {
   id: string;
   name: string;
@@ -19,6 +23,7 @@ export interface Broadcast {
   deliveryRate?: number;
   createdById: string;
   templateId?: string;
+  senderConfig?: BroadcastSenderConfig | null;
   createdAt: string;
   chatCount?: number;
   sentCount?: number;
@@ -94,6 +99,7 @@ export interface CreateBroadcastInput {
   scheduledAt?: string;
   templateId?: string;
   attachments?: BroadcastAttachment[];
+  senderConfig?: BroadcastSenderConfig;
 }
 
 export interface UpdateBroadcastInput {
@@ -103,6 +109,7 @@ export interface UpdateBroadcastInput {
   scheduledAt?: string;
   templateId?: string;
   attachments?: BroadcastAttachment[];
+  senderConfig?: BroadcastSenderConfig;
 }
 
 // ─── Safe presets — conservative, match API defaults, low ban risk ───

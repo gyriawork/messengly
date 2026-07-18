@@ -34,6 +34,17 @@ const idParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+// Task 7/8: per-messenger sending account. NULL/omitted = legacy behavior
+// (worker picks the org's oldest connected integration for that messenger).
+// sendAs is Slack-only (bot vs personal account).
+const senderConfigSchema = z.record(
+  z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']),
+  z.object({
+    integrationId: z.string().uuid(),
+    sendAs: z.enum(['bot', 'user']).optional(),
+  }),
+).optional();
+
 const createBroadcastBodySchema = z.object({
   name: z.string().min(1).max(500),
   messageText: z.string().min(1).max(10000),
@@ -41,6 +52,7 @@ const createBroadcastBodySchema = z.object({
   scheduledAt: z.coerce.date().optional(),
   templateId: z.string().uuid().optional(),
   attachments: z.any().optional(),
+  senderConfig: senderConfigSchema,
 });
 
 const updateBroadcastBodySchema = z.object({
@@ -48,6 +60,7 @@ const updateBroadcastBodySchema = z.object({
   messageText: z.string().min(1).max(10000).optional(),
   chatIds: z.array(z.string().uuid()).min(1).max(10000).optional(),
   scheduledAt: z.coerce.date().nullable().optional(),
+  senderConfig: senderConfigSchema,
 });
 
 const analyticsQuerySchema = z.object({
@@ -66,6 +79,52 @@ function sendError(reply: FastifyReply, code: string, message: string, statusCod
   return reply.status(statusCode).send({
     error: { code, message, statusCode },
   });
+}
+
+type SenderConfig = Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }>;
+
+/**
+ * Task 7/8: validate a broadcast's chosen sender per messenger.
+ * - The integration must exist, belong to this org, match the messenger, and
+ *   be connected.
+ * - admin/superadmin may pick any integration in the org (Task 7: admin sends
+ *   from any org user's connected account).
+ * - A plain `user` may only pick their own connection, EXCEPT Slack's
+ *   org-level bot with sendAs:'bot' — that's the one org-owned resource a
+ *   regular user is allowed to send through (Task 8).
+ * - sendAs is only meaningful for Slack.
+ */
+async function validateSenderConfig(
+  request: FastifyRequest,
+  organizationId: string,
+  senderConfig: SenderConfig | undefined,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!senderConfig) return { ok: true };
+  const isPrivileged = request.user.role === 'admin' || request.user.role === 'superadmin';
+
+  for (const [messenger, cfg] of Object.entries(senderConfig)) {
+    if (cfg.sendAs && messenger !== 'slack') {
+      return { ok: false, message: `sendAs is only supported for slack (got ${messenger})` };
+    }
+
+    const integration = await prisma.integration.findUnique({ where: { id: cfg.integrationId } });
+    if (!integration || integration.organizationId !== organizationId || integration.messenger !== messenger) {
+      return { ok: false, message: `Sender account for ${messenger} was not found in this organization` };
+    }
+    if (integration.status !== 'connected') {
+      return { ok: false, message: `Sender account for ${messenger} is not connected` };
+    }
+
+    if (!isPrivileged) {
+      const isOwnAccount = integration.userId === request.user.id;
+      const isOrgSlackBot = messenger === 'slack' && integration.scope === 'org' && cfg.sendAs === 'bot';
+      if (!isOwnAccount && !isOrgSlackBot) {
+        return { ok: false, message: `You can only send ${messenger} messages from your own connected account` };
+      }
+    }
+  }
+
+  return { ok: true };
 }
 
 /** Push a broadcast status change to the org's connected browsers. */
@@ -511,7 +570,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { name, messageText: rawMessageText, chatIds, scheduledAt, templateId, attachments } = parsed.data;
+      const { name, messageText: rawMessageText, chatIds, scheduledAt, templateId, attachments, senderConfig } = parsed.data;
       const messageText = stripHtml(rawMessageText);
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -539,6 +598,11 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         }
       }
 
+      const senderCheck = await validateSenderConfig(request, organizationId, senderConfig);
+      if (!senderCheck.ok) {
+        return sendError(reply, 'VALIDATION_ERROR', senderCheck.message, 422);
+      }
+
       const broadcast = await prisma.$transaction(async (tx) => {
         const b = await tx.broadcast.create({
           data: {
@@ -550,6 +614,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
             organizationId,
             createdById: request.user.id,
             templateId: templateId ?? undefined,
+            senderConfig: senderConfig ?? undefined,
           },
         });
 
@@ -603,7 +668,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       }
 
       const { id } = paramsParsed.data;
-      const { name, messageText: rawMessageText, chatIds, scheduledAt } = bodyParsed.data;
+      const { name, messageText: rawMessageText, chatIds, scheduledAt, senderConfig } = bodyParsed.data;
       const messageText = rawMessageText !== undefined ? stripHtml(rawMessageText) : undefined;
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -621,10 +686,18 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Only draft or scheduled broadcasts can be updated', 422);
       }
 
+      if (senderConfig !== undefined) {
+        const senderCheck = await validateSenderConfig(request, organizationId, senderConfig);
+        if (!senderCheck.ok) {
+          return sendError(reply, 'VALIDATION_ERROR', senderCheck.message, 422);
+        }
+      }
+
       const updated = await prisma.$transaction(async (tx) => {
         const updateData: Record<string, unknown> = {};
         if (name !== undefined) updateData.name = name;
         if (messageText !== undefined) updateData.messageText = messageText;
+        if (senderConfig !== undefined) updateData.senderConfig = senderConfig;
         if (scheduledAt !== undefined) {
           updateData.scheduledAt = scheduledAt;
           updateData.status = scheduledAt ? 'scheduled' : 'draft';
@@ -1022,6 +1095,9 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
             organizationId,
             createdById: request.user.id,
             templateId: original.templateId ?? undefined,
+            // Copy the sender too — a duplicate that silently reset to the
+            // legacy default sender would send from the wrong identity.
+            senderConfig: original.senderConfig ?? undefined,
           },
         });
 

@@ -34,8 +34,12 @@ import {
 } from '@/hooks/useBroadcasts';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useTags } from '@/hooks/useTags';
+import { useIntegrations } from '@/hooks/useIntegrations';
+import { useTeamUsers } from '@/hooks/useUsers';
+import { useAuthStore } from '@/stores/auth';
+import { isAdmin } from '@/lib/permissions';
 import type { MessengerType } from '@/types/chat';
-import type { BroadcastAttachment, AntibanSettings } from '@/types/broadcast';
+import type { BroadcastAttachment, AntibanSettings, BroadcastSenderConfig } from '@/types/broadcast';
 import { api } from '@/lib/api';
 import { estimateMessenger, formatDuration, formatFinishTime } from '@/lib/broadcast-estimate';
 
@@ -193,6 +197,47 @@ export function BroadcastWizard() {
     return groups;
   }, [selectedChats]);
 
+  // Task 7/8: who sends each messenger's batch. Untouched = omitted from the
+  // payload = legacy behavior (the org's default connected account) — a user
+  // with no personal connections never sees this section do anything.
+  const authUser = useAuthStore((s) => s.user);
+  const admin = isAdmin(authUser);
+  const { data: integrationsData } = useIntegrations();
+  const { data: teamUsers } = useTeamUsers();
+  const [senderByMessenger, setSenderByMessenger] = useState<BroadcastSenderConfig>(
+    (existingBroadcast?.senderConfig as BroadcastSenderConfig | null) ?? {},
+  );
+  const senderOptionsByMessenger = useMemo(() => {
+    const all = integrationsData?.integrations ?? [];
+    const result: Record<string, Array<{ key: string; label: string; integrationId: string; sendAs?: 'bot' | 'user' }>> = {};
+    for (const messenger of Object.keys(groupedSelected)) {
+      const forMessenger = all.filter((i) => i.messenger === messenger && i.status === 'connected');
+      const options: Array<{ key: string; label: string; integrationId: string; sendAs?: 'bot' | 'user' }> = [];
+      for (const integration of forMessenger) {
+        const isMine = integration.userId === authUser?.id;
+        const isOrgSlackBot = messenger === 'slack' && integration.scope === 'org';
+        // A plain user may only pick their own connection — except Slack's
+        // org bot, which every user may send through (Task 8).
+        if (!admin && !isMine && !isOrgSlackBot) continue;
+
+        if (isOrgSlackBot) {
+          options.push({ key: `${integration.id}:bot`, label: 'Organization bot', integrationId: integration.id, sendAs: 'bot' });
+        } else {
+          const ownerName = isMine ? 'My account' : teamUsers?.find((u) => u.id === integration.userId)?.name ?? 'Unknown user';
+          const label = messenger === 'slack' ? `${ownerName} (personal)` : ownerName;
+          options.push({
+            key: messenger === 'slack' ? `${integration.id}:user` : integration.id,
+            label,
+            integrationId: integration.id,
+            ...(messenger === 'slack' ? { sendAs: 'user' as const } : {}),
+          });
+        }
+      }
+      if (options.length > 0) result[messenger] = options;
+    }
+    return result;
+  }, [integrationsData, groupedSelected, admin, authUser, teamUsers]);
+
   // A broadcast is one day's send, so a messenger cannot deliver more than its
   // daily anti-ban limit in one go — the rest would stall. Block the wizard
   // until the operator raises the limit or trims recipients.
@@ -301,6 +346,7 @@ export function BroadcastWizard() {
   );
 
   async function onSaveDraft(data: BroadcastFormData) {
+    const senderConfig = Object.keys(senderByMessenger).length > 0 ? senderByMessenger : undefined;
     try {
       if (editId) {
         await updateMutation.mutateAsync({
@@ -311,6 +357,7 @@ export function BroadcastWizard() {
           scheduledAt:
             data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
+          senderConfig,
         });
         toast.success('Broadcast updated');
       } else {
@@ -321,6 +368,7 @@ export function BroadcastWizard() {
           scheduledAt:
             data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
+          senderConfig,
         });
         toast.success('Broadcast saved as draft');
       }
@@ -331,6 +379,7 @@ export function BroadcastWizard() {
   }
 
   async function onSendNow(data: BroadcastFormData) {
+    const senderConfig = Object.keys(senderByMessenger).length > 0 ? senderByMessenger : undefined;
     try {
       let broadcastId = editId;
       if (editId) {
@@ -342,6 +391,7 @@ export function BroadcastWizard() {
           scheduledAt:
             data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
+          senderConfig,
         });
       } else {
         const created = await createMutation.mutateAsync({
@@ -351,6 +401,7 @@ export function BroadcastWizard() {
           scheduledAt:
             data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
+          senderConfig,
         });
         broadcastId = created.id;
       }
@@ -1021,6 +1072,54 @@ export function BroadcastWizard() {
                     : 'No time selected'}
               </p>
             </div>
+
+            {/* Sender — Task 7/8: who this broadcast sends as, per messenger.
+                Left untouched, a messenger keeps sending from the org's
+                default connected account exactly as before. */}
+            {Object.keys(senderOptionsByMessenger).length > 0 && (
+              <div className="rounded-lg border border-slate-200 p-4">
+                <p className="text-xs font-medium uppercase text-slate-400">Sender</p>
+                <div className="mt-2 space-y-3">
+                  {Object.entries(senderOptionsByMessenger).map(([messenger, options]) => {
+                    const meta = messengerMeta[messenger];
+                    const current = senderByMessenger[messenger];
+                    const currentKey = current
+                      ? options.find((o) => o.integrationId === current.integrationId && o.sendAs === current.sendAs)?.key ?? ''
+                      : '';
+                    return (
+                      <div key={messenger} className="flex items-center justify-between gap-3">
+                        <span
+                          className={cn('rounded-full px-2 py-0.5 text-xs font-medium', meta?.bgClass, meta?.textClass)}
+                        >
+                          {meta?.label}
+                        </span>
+                        <select
+                          value={currentKey}
+                          onChange={(e) => {
+                            const opt = options.find((o) => o.key === e.target.value);
+                            setSenderByMessenger((prev) => {
+                              const next = { ...prev };
+                              if (opt) {
+                                next[messenger] = { integrationId: opt.integrationId, ...(opt.sendAs ? { sendAs: opt.sendAs } : {}) };
+                              } else {
+                                delete next[messenger];
+                              }
+                              return next;
+                            });
+                          }}
+                          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-accent focus:outline-none"
+                        >
+                          <option value="">Default account</option>
+                          {options.map((o) => (
+                            <option key={o.key} value={o.key}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             </div>
 

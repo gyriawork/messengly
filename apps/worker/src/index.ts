@@ -207,6 +207,7 @@ async function sendMessengerBatch(
   antibanConfig: AntibanConfig,
   isRetry: boolean,
   attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>,
+  senderConfig?: Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
 ): Promise<{ sent: number; failed: number; skipped: number }> {
   const messenger = messengerChats[0]?.chat.messenger;
   if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0, skipped: 0 };
@@ -240,18 +241,38 @@ async function sendMessengerBatch(
   // correctly in every messenger (Telegram shows the raw code otherwise).
   messageText = emojify(messageText);
 
-  // Find integration credentials for this messenger + org. Legacy behavior
-  // (no explicit sender chosen — see Broadcast.senderConfig): the oldest
-  // connected row. orderBy matters now that per-user connections (Task 3/4)
-  // can put more than one connected row per messenger+org.
-  const integration = await prisma.integration.findFirst({
-    where: {
-      messenger,
-      organizationId,
-      status: 'connected',
-    },
-    orderBy: { createdAt: 'asc' },
-  });
+  // Task 7/8: an explicitly chosen sender (Broadcast.senderConfig) is pinned
+  // by integrationId and must be honored exactly — falling back to a
+  // different account would send under the wrong identity, which is worse
+  // than failing outright. No senderConfig for this messenger = legacy
+  // behavior: the org's oldest connected row. orderBy matters now that
+  // per-user connections (Task 3/4) can put more than one connected row per
+  // messenger+org.
+  const chosenSender = senderConfig?.[messenger];
+  let integration;
+  if (chosenSender) {
+    integration = await prisma.integration.findUnique({ where: { id: chosenSender.integrationId } });
+    if (!integration || integration.organizationId !== organizationId || integration.messenger !== messenger || integration.status !== 'connected') {
+      log.error('Selected sender account is no longer connected', { broadcastId, messenger, integrationId: chosenSender.integrationId });
+      await prisma.broadcastChat.updateMany({
+        where: { id: { in: messengerChats.map((c) => c.id) } },
+        data: {
+          status: 'failed',
+          errorReason: 'Selected sender account is no longer connected',
+        },
+      });
+      return { sent: 0, failed: messengerChats.length, skipped: preSkipped };
+    }
+  } else {
+    integration = await prisma.integration.findFirst({
+      where: {
+        messenger,
+        organizationId,
+        status: 'connected',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
 
   let adapter;
   try {
@@ -259,6 +280,9 @@ async function sendMessengerBatch(
       const credentials = decryptCredentials<Record<string, unknown>>(
         integration.credentials as string,
       );
+      if (chosenSender?.sendAs) {
+        (credentials as Record<string, unknown>).sendAs = chosenSender.sendAs;
+      }
       adapter = await createAdapter(messenger, credentials, { organizationId });
     } else {
       throw new Error(`No connected integration found for ${messenger}`);
@@ -595,6 +619,7 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
         antibanConfig,
         false,
         broadcastAttachments,
+        broadcast.senderConfig as Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
       );
     }),
   );
@@ -697,6 +722,7 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
           antibanConfig,
           true,
           retryAttachments,
+          broadcast.senderConfig as Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
         );
       }
     }),

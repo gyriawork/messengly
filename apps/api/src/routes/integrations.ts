@@ -138,6 +138,7 @@ function sanitizeIntegration(integration: {
   settings: unknown;
   organizationId: string;
   userId: string;
+  scope: string;
   connectedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -154,6 +155,10 @@ function sanitizeIntegration(integration: {
     settings: integration.settings,
     organizationId: integration.organizationId,
     userId: integration.userId,
+    // 'org' = shared connection an admin manages; 'user' = a personal
+    // self-connect (Task 3/4). The broadcast sender picker (Task 7/8) relies
+    // on this to offer Slack's org bot to every user.
+    scope: integration.scope,
     connectedAt: integration.connectedAt,
     createdAt: integration.createdAt,
     updatedAt: integration.updatedAt,
