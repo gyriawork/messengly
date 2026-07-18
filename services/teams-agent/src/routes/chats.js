@@ -12,7 +12,8 @@ const router = express.Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const chats = await scanChats();
+    const sessionKey = typeof req.query.session === 'string' && req.query.session.trim() ? req.query.session.trim() : 'default';
+    const chats = await scanChats(sessionKey);
     res.json({ chats });
   } catch (err) { next(err); }
 });

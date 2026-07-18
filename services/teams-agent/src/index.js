@@ -34,13 +34,17 @@ app.use(helmet());
 app.use(cors({ origin: false })); // service-to-service only; no browser origins
 app.use(express.json({ limit: '1mb' }));
 
-// Health is unauthenticated so Railway can probe it.
+// Health is unauthenticated so Railway can probe it. `busy`/`queueDepth` are
+// aggregated across every session key that has ever taken a lock — a probe
+// that only checked 'default' would miss load on a personal Teams session.
 app.get('/health', (req, res) => {
+  const sessions = lock.snapshot();
   res.json({
     status: 'ok',
     hasSession: browser.hasSession(),
-    busy: lock.isLocked(),
-    queueDepth: lock.queueDepth(),
+    busy: sessions.some((s) => s.locked),
+    queueDepth: sessions.reduce((sum, s) => sum + s.queueDepth, 0),
+    liveSessions: browser.listLiveSessionKeys().length,
     timestamp: new Date().toISOString(),
   });
 });

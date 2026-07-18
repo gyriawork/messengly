@@ -41,9 +41,11 @@ export default function MessengerSettingsPage() {
   const messenger = info.key as MessengerType;
   const admin = isAdmin(user);
   const canSelfConnect = can(user, 'canSelfConnectMessengers');
-  // Teams' personal connections aren't available yet — the org's shared
-  // browser session (services/teams-agent) is managed by admins only.
-  const selfConnectAllowed = canSelfConnect && messenger !== 'teams';
+  // Task 8: Teams is now per-user too — a plain user with
+  // canSelfConnectMessengers gets their own isolated browser session,
+  // separate from the org's shared one (which only an admin's own "My
+  // account" connect creates).
+  const selfConnectAllowed = canSelfConnect;
 
   if (isLoading) {
     return (
@@ -115,11 +117,7 @@ export default function MessengerSettingsPage() {
       {/* My account */}
       <div className="mt-6">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">My account</h2>
-        {messenger === 'teams' && !admin ? (
-          <p className="text-sm text-slate-500">
-            MS Teams is connected once for the whole organization by an admin. Ask your admin if you need access.
-          </p>
-        ) : mine ? (
+        {mine ? (
           <div className="flex items-center justify-between rounded-xl bg-white p-4 shadow-xs">
             <p className="text-sm text-slate-700">
               {mine.status === 'connected' ? 'Connected' : `Status: ${mine.status}`}

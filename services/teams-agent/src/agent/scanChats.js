@@ -17,21 +17,22 @@ const { detectChatType } = require('./chatType');
 const lock = require('./lock');
 
 /**
+ * @param {string} [sessionKey] Which Teams session to scan (default: 'default')
  * @returns {Promise<Array<{ threadId: string, name: string, type: 'direct'|'group'|'channel'|null }>>}
  */
-async function scanChats() {
+async function scanChats(sessionKey = 'default') {
   return lock.withLock(async () => {
-    logger.info('Starting chat scan...');
-    const page = await ensurePage();
+    logger.info({ sessionKey }, 'Starting chat scan...');
+    const page = await ensurePage(sessionKey);
     await checkSession(page);
 
     const chats = await collectAllChats(page);
-    logger.info({ count: chats.length }, 'Collected chats from sidebar');
+    logger.info({ count: chats.length, sessionKey }, 'Collected chats from sidebar');
 
     return chats
       .filter((c) => c.id && c.name)
       .map((c) => ({ threadId: c.id, name: c.name, type: detectChatType(c) }));
-  });
+  }, undefined, sessionKey);
 }
 
 module.exports = { scanChats };

@@ -61,6 +61,8 @@ export interface TeamsSendBody {
   html?: string;
   attachments?: TeamsAttachment[];
   requestId?: string;
+  /** Which Teams browser session to send through. Omit for the legacy shared session. */
+  sessionKey?: string;
 }
 
 /**
@@ -135,24 +137,33 @@ export class TeamsAgentClient {
   }
 
   // ─── Session ───
+  // sessionKey selects which Teams browser session (see services/teams-agent's
+  // multi-session support). Omitted = the agent's own 'default' — the one
+  // shared session that already existed before per-user Teams connections.
 
-  getSessionStatus(): Promise<TeamsSessionInfo> {
-    return this.request<TeamsSessionInfo>('GET', '/session/status');
+  private sessionQuery(sessionKey?: string): string {
+    return sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : '';
+  }
+
+  getSessionStatus(sessionKey?: string): Promise<TeamsSessionInfo> {
+    return this.request<TeamsSessionInfo>('GET', `/session/status${this.sessionQuery(sessionKey)}`);
   }
 
   /** Forces a real navigation rather than reading the cached verdict. */
-  checkSession(): Promise<TeamsSessionInfo> {
-    return this.request<TeamsSessionInfo>('POST', '/session/check');
+  checkSession(sessionKey?: string): Promise<TeamsSessionInfo> {
+    return this.request<TeamsSessionInfo>('POST', `/session/check${this.sessionQuery(sessionKey)}`);
   }
 
-  destroySession(): Promise<{ destroyed: boolean }> {
-    return this.request<{ destroyed: boolean }>('POST', '/session/destroy');
+  destroySession(sessionKey?: string): Promise<{ destroyed: boolean }> {
+    return this.request<{ destroyed: boolean }>('POST', `/session/destroy${this.sessionQuery(sessionKey)}`);
   }
 
   // ─── Remote browser login ───
+  // The remote browser itself is one-login-at-a-time system-wide; sessionKey
+  // only decides which file the resulting login gets saved into.
 
-  remoteStart(): Promise<TeamsRemoteStartResult> {
-    return this.request<TeamsRemoteStartResult>('POST', '/session/remote/start');
+  remoteStart(sessionKey?: string): Promise<TeamsRemoteStartResult> {
+    return this.request<TeamsRemoteStartResult>('POST', `/session/remote/start${this.sessionQuery(sessionKey)}`);
   }
 
   /** Returns raw JPEG bytes plus the agent's login verdict from a response header. */
@@ -196,8 +207,8 @@ export class TeamsAgentClient {
 
   // ─── Chats & messages ───
 
-  async listChats(): Promise<TeamsChat[]> {
-    const { chats } = await this.request<{ chats: TeamsChat[] }>('GET', '/chats');
+  async listChats(sessionKey?: string): Promise<TeamsChat[]> {
+    const { chats } = await this.request<{ chats: TeamsChat[] }>('GET', `/chats${this.sessionQuery(sessionKey)}`);
     return chats;
   }
 

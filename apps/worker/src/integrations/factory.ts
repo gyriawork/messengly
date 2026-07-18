@@ -60,10 +60,12 @@ export async function createAdapter(
       return new GmailAdapter({ clientId, clientSecret, refreshToken: gmailCreds.refreshToken });
     }
     case 'teams': {
-      // No credentials to pass: the teams-agent sidecar owns the single browser
-      // session, exactly as WAHA owns the WhatsApp one.
+      // The sidecar owns the browser session(s); credentials carry only which
+      // one this Integration row points at. No sessionKey (the legacy
+      // scope:'org' shared connection) = the agent's own 'default' session.
       const { TeamsAdapter } = await import('./teams.js');
-      return new TeamsAdapter();
+      const teamsCreds = credentials as { sessionKey?: string };
+      return new TeamsAdapter(teamsCreds.sessionKey);
     }
     default:
       throw new MessengerError(

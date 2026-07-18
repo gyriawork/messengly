@@ -28,12 +28,12 @@ const ALL_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 /** Entry point for a plain user with canSelfConnectMessengers — links out to
  * each messenger's own settings page (Task 4). Admin+ uses the fuller
  * Integrations tab instead, so this only ever renders for a self-connecting
- * `user`. */
+ * `user`. Teams is included since Task 8: a self-connecting user gets their
+ * own isolated Teams browser session, separate from the org's shared one. */
 function MyMessengersTab() {
-  const visible = messengers.filter((m) => m.key !== 'teams');
   return (
     <div className="space-y-3">
-      {visible.map((m) => (
+      {messengers.map((m) => (
         <Link
           key={m.key}
           href={`/settings/messengers/${m.key}`}

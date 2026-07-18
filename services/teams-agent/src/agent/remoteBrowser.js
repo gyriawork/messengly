@@ -14,11 +14,9 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../util/logger');
-const config = require('../config');
 const S = require('./selectors');
 const { getProxyConfig } = require('./proxy');
-
-const SESSION_PATH = config.SESSION_PATH;
+const { sessionPathFor } = require('./sessionPaths');
 
 const VIEWPORT = { width: 1600, height: 900 };
 const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes (MFA flow can be slow)
@@ -45,6 +43,8 @@ let session = {
   consecutiveLoggedIn: 0,
   /** Our own 'disconnected' handler, so cleanup() can remove exactly it. */
   onDisconnected: null,
+  /** Which Teams session this login will be saved into (see sessionPaths.js). */
+  sessionKey: 'default',
 };
 
 function touchActivity() {
@@ -56,7 +56,7 @@ function touchActivity() {
   }, INACTIVITY_TIMEOUT);
 }
 
-async function start() {
+async function start(sessionKey = 'default') {
   // Self-heal: if state says active but the browser is dead, force cleanup first
   if (session.active || session.stopping || session.browser) {
     const stillAlive = !!(session.browser && typeof session.browser.isConnected === 'function' && session.browser.isConnected());
@@ -73,6 +73,7 @@ async function start() {
   session.startedAt = Date.now();
   session.lastLoginCheck = 0;
   session.consecutiveLoggedIn = 0;
+  session.sessionKey = sessionKey;
 
   try {
     const proxy = getProxyConfig();
@@ -163,11 +164,12 @@ async function pressKey(key) {
 }
 
 function persistStorageState(state) {
-  fs.mkdirSync(path.dirname(SESSION_PATH), { recursive: true });
-  if (fs.existsSync(SESSION_PATH)) {
-    fs.copyFileSync(SESSION_PATH, SESSION_PATH + '.prev');
+  const sessionPath = sessionPathFor(session.sessionKey);
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  if (fs.existsSync(sessionPath)) {
+    fs.copyFileSync(sessionPath, sessionPath + '.prev');
   }
-  fs.writeFileSync(SESSION_PATH, JSON.stringify(state, null, 2));
+  fs.writeFileSync(sessionPath, JSON.stringify(state, null, 2));
 }
 
 /**
@@ -350,12 +352,18 @@ function resetState() {
   session.lastLoginCheck = 0;
   session.consecutiveLoggedIn = 0;
   session.onDisconnected = null;
+  session.sessionKey = 'default';
   clearTimeout(session.timeoutTimer);
   session.timeoutTimer = null;
 }
 
 function isActive() {
   return session.active && !session.stopping;
+}
+
+/** Which session key the current (or most recent) remote login targets. */
+function activeSessionKey() {
+  return session.sessionKey;
 }
 
 function assertActive() {
@@ -366,5 +374,5 @@ function assertActive() {
 
 module.exports = {
   start, screenshot, click, type, pressKey,
-  checkAndSaveSession, saveSession, stop, isActive, VIEWPORT,
+  checkAndSaveSession, saveSession, stop, isActive, activeSessionKey, VIEWPORT,
 };

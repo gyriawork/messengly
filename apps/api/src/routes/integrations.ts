@@ -4,7 +4,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { encryptCredentials, decryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission, requireMinRole } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 import { resolveIntegration } from '../lib/integration-resolver.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
@@ -199,12 +199,6 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   // everyone else. Read-only status endpoints stay open to any authenticated user.
   const authPreHandlers = [authenticate, requirePermission('canSelfConnectMessengers')];
   const readPreHandlers = [authenticate];
-  // Teams' remote-login screen and logout act on the ONE shared browser
-  // session for the whole system (services/teams-agent) — there is no
-  // per-user Teams connection yet (that's Phase 8), so these stay admin+
-  // regardless of canSelfConnectMessengers. A self-connecting plain user
-  // must never be able to take over or sign out the org's shared Teams login.
-  const teamsAdminPreHandlers = [authenticate, requireMinRole('admin')];
 
   // ─── GET /integrations/available ───
   // Returns which messengers are available (platform credentials configured) vs unavailable.
@@ -1532,22 +1526,38 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   // ─── Microsoft Teams ───
   //
   // Teams offers no OAuth and no API token for personal accounts. The teams-agent
-  // sidecar holds one browser session for the whole system, and an operator creates
-  // it by driving a streamed remote browser: we relay JPEG frames out and clicks and
-  // keystrokes back, so a human can clear MFA with their own eyes.
+  // sidecar drives a streamed remote browser: we relay JPEG frames out and clicks
+  // and keystrokes back, so a human can clear MFA with their own eyes.
   //
-  // The Integration row only records that a session exists. The session itself lives
-  // on the sidecar's volume — the same split as WhatsApp, where WAHA owns the session
-  // and Messengly stores a pointer.
+  // Task 8: the sidecar can now hold more than one browser session. An admin+
+  // connecting still gets the legacy shared org session (scope 'org', no
+  // sessionKey — resolves to the agent's own 'default', byte-identical to
+  // pre-Phase-8 behavior). A plain user (gated by canSelfConnectMessengers,
+  // same as every other messenger) gets their own isolated session instead.
+  // The Integration row only records that a session exists; the session
+  // itself lives on the sidecar's volume — same split as WhatsApp/WAHA.
 
-  async function upsertTeamsIntegration(organizationId: string, userId: string): Promise<void> {
+  /**
+   * Deterministic, not random: computable fresh on every request with no DB
+   * round-trip, so /remote/start, every screenshot poll, and /remote/save all
+   * agree on the same key without needing to persist or re-read anything
+   * in between. 'org' scope stays undefined (→ agent 'default') so the one
+   * Teams session that predates Phase 8 keeps resolving to the exact same file.
+   */
+  function teamsSessionKeyFor(scope: 'org' | 'user', userId: string): string | undefined {
+    return scope === 'user' ? `u_${userId}` : undefined;
+  }
+
+  async function upsertTeamsIntegration(organizationId: string, userId: string, scope: 'org' | 'user'): Promise<void> {
+    const sessionKey = teamsSessionKeyFor(scope, userId);
     const credentials = encryptCredentials({
       status: 'connected',
       lastCheckAt: new Date().toISOString(),
+      ...(sessionKey ? { sessionKey } : {}),
     });
 
     await prisma.integration.upsert({
-      where: { messenger_organizationId_userId_scope: { messenger: 'teams', organizationId, userId, scope: 'org' } },
+      where: { messenger_organizationId_userId_scope: { messenger: 'teams', organizationId, userId, scope } },
       update: { credentials, status: 'connected', connectedAt: new Date() },
       create: {
         messenger: 'teams',
@@ -1555,6 +1565,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         credentials,
         organizationId,
         userId,
+        scope,
         connectedAt: new Date(),
       },
     });
@@ -1573,8 +1584,10 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
    * global 100 req/min ceiling, and a login can run for minutes while the
    * operator clears MFA. These routes get their own budget.
    *
-   * They are superadmin-only and do nothing but proxy to the sidecar, which has
-   * its own single-browser mutex — so a generous limit costs nothing.
+   * Gated the same as every other messenger's connect flow (admin+, or a
+   * plain user with canSelfConnectMessengers acting on their own session) —
+   * do nothing but proxy to the sidecar, which has its own per-session
+   * mutex, so a generous limit costs nothing.
    */
   const remoteStreamRateLimit = {
     config: { rateLimit: { max: 300, timeWindow: '1 minute' } },
@@ -1594,9 +1607,10 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   fastify.get(
     '/integrations/teams/status',
     { preHandler: readPreHandlers },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        return reply.send(await teamsAgent.getSessionStatus());
+        const sessionKey = teamsSessionKeyFor(connectScopeFor(request), request.user.id);
+        return reply.send(await teamsAgent.getSessionStatus(sessionKey));
       } catch (err) {
         return sendTeamsAgentError(reply, err);
       }
@@ -1607,10 +1621,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/start',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
+    async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        return reply.send(await teamsAgent.remoteStart());
+        const sessionKey = teamsSessionKeyFor(connectScopeFor(request), request.user.id);
+        return reply.send(await teamsAgent.remoteStart(sessionKey));
       } catch (err) {
         return sendTeamsAgentError(reply, err);
       }
@@ -1624,7 +1639,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.get(
     '/integrations/teams/remote/screenshot',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1633,7 +1648,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       try {
         const { image, loggedIn } = await teamsAgent.remoteScreenshot();
-        if (loggedIn) await upsertTeamsIntegration(organizationId, request.user.id);
+        if (loggedIn) await upsertTeamsIntegration(organizationId, request.user.id, connectScopeFor(request));
 
         return reply
           .header('Content-Type', 'image/jpeg')
@@ -1654,7 +1669,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/click',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsClickSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'x and y must be numbers', 422);
@@ -1668,7 +1683,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/type',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsTypeSchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'text must be 1–500 characters', 422);
@@ -1682,7 +1697,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/key',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = teamsKeySchema.safeParse(request.body);
       if (!body.success) return sendError(reply, 'VALIDATION_ERROR', 'key is required', 422);
@@ -1700,7 +1715,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/save',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1709,7 +1724,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       try {
         const result = await teamsAgent.remoteSave();
-        await upsertTeamsIntegration(organizationId, request.user.id);
+        await upsertTeamsIntegration(organizationId, request.user.id, connectScopeFor(request));
         return reply.send(result);
       } catch (err) {
         return sendTeamsAgentError(reply, err);
@@ -1721,7 +1736,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/teams/remote/stop',
-    { preHandler: teamsAdminPreHandlers, ...remoteStreamRateLimit },
+    { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         return reply.send(await teamsAgent.remoteStop());
@@ -1732,26 +1747,30 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   );
 
   // ─── POST /integrations/teams/logout ───
-  // Signs Teams out for the whole system and drops the stored session. The generic
-  // /disconnect route only flips the Integration row; it cannot reach the sidecar.
+  // Signs the CALLER's own Teams session out (org-shared for admin+, personal
+  // for a self-connecting user) and drops its stored session file. The
+  // generic /disconnect route only flips the Integration row; it cannot
+  // reach the sidecar.
 
   fastify.post(
     '/integrations/teams/logout',
-    { preHandler: teamsAdminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
+      const scope = connectScopeFor(request);
+      const sessionKey = teamsSessionKeyFor(scope, request.user.id);
 
       try {
-        await teamsAgent.destroySession();
+        await teamsAgent.destroySession(sessionKey);
       } catch (err) {
         return sendTeamsAgentError(reply, err);
       }
 
       await prisma.integration.updateMany({
-        where: { messenger: 'teams', organizationId },
+        where: { messenger: 'teams', organizationId, userId: request.user.id, scope },
         data: { status: 'disconnected' },
       });
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));

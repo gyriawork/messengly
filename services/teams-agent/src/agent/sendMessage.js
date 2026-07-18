@@ -71,10 +71,11 @@ function startStep(stepName, chatLabel, requestId) {
  * @param {Array<{path: string, fileName: string, mimeType: string}>} [args.attachments]
  *   Already downloaded to disk by attachments.stageAll()
  * @param {string} [args.requestId]    Correlates debug snapshots with Messengly logs
+ * @param {string} [args.sessionKey]   Which Teams session to send through (default: 'default')
  * @returns {Promise<{success: boolean, error?: string, retriable?: boolean}>}
  */
-async function sendMessage({ threadId, html, plain, attachments = [], requestId = null }) {
-  const page = getPage();
+async function sendMessage({ threadId, html, plain, attachments = [], requestId = null, sessionKey = 'default' }) {
+  const page = getPage(sessionKey);
   const chatLabel = threadId;
 
   // Step 0: ensure the session is valid (throws SessionExpiredError)

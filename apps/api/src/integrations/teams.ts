@@ -51,12 +51,20 @@ export class TeamsAdapter implements MessengerAdapter {
   private halted = false;
 
   /**
+   * Selects which of the sidecar's Teams browser sessions this adapter talks
+   * to (Task 8: per-user Teams connections). Undefined = the agent's own
+   * 'default' — the one shared session that existed before per-user Teams,
+   * still used for every `scope: 'org'` Integration row.
+   */
+  constructor(private sessionKey?: string) {}
+
+  /**
    * The sidecar owns the browser, so "connecting" means asserting that its Teams
    * session is alive. A half-booted or signed-out session reports `expired`.
    */
   async connect(): Promise<void> {
     try {
-      const info = await teamsAgent.getSessionStatus();
+      const info = await teamsAgent.getSessionStatus(this.sessionKey);
       if (info.status !== 'active') {
         this.status = 'session_expired';
         throw new MessengerError(
@@ -82,7 +90,7 @@ export class TeamsAdapter implements MessengerAdapter {
 
   async listChats(): Promise<Array<{ externalChatId: string; name: string; chatType: string }>> {
     try {
-      const chats = await teamsAgent.listChats();
+      const chats = await teamsAgent.listChats(this.sessionKey);
       return chats.map((c) => ({
         externalChatId: c.threadId,
         name: c.name,
@@ -130,6 +138,7 @@ export class TeamsAdapter implements MessengerAdapter {
           filename: a.filename,
           mimeType: a.mimeType,
         })),
+        sessionKey: this.sessionKey,
       });
     } catch (err) {
       throw this.classifyAgentError(err);

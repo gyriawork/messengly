@@ -39,10 +39,10 @@ async function jitter() {
 
 /**
  * POST /messages
- * Body: { threadId, html?, text, attachments?: [{url, filename, mimeType}], requestId? }
+ * Body: { threadId, html?, text, attachments?: [{url, filename, mimeType}], requestId?, sessionKey? }
  */
 router.post('/', async (req, res, next) => {
-  const { threadId, html, text, attachments: files = [], requestId = null } = req.body || {};
+  const { threadId, html, text, attachments: files = [], requestId = null, sessionKey = 'default' } = req.body || {};
 
   if (!threadId || typeof threadId !== 'string') {
     return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'threadId is required' } });
@@ -67,9 +67,9 @@ router.post('/', async (req, res, next) => {
     await jitter();
 
     const result = await lock.withLock(async () => {
-      await browser.ensurePage();
-      return sendMessage({ threadId, html: richHtml, plain, attachments: staged, requestId });
-    });
+      await browser.ensurePage(sessionKey);
+      return sendMessage({ threadId, html: richHtml, plain, attachments: staged, requestId, sessionKey });
+    }, undefined, sessionKey);
 
     if (result.success) {
       return res.json({ ok: true, messageId: `teams:${threadId}:${Date.now()}` });
