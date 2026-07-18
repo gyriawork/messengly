@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireMinRole } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
@@ -41,8 +41,9 @@ function getOrgId(request: FastifyRequest): string | null {
 
 export default async function tagRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  // Tags are a broadcasting aid — any authenticated user manages them.
-  const tagWritePreHandlers = [authenticate, requireMinRole('user')];
+  // Admin/superadmin always manage tags; a plain `user` needs the
+  // canCreateTags permission (Task 6) — org admins can restrict it per user.
+  const tagWritePreHandlers = [authenticate, requirePermission('canCreateTags')];
 
   // ─── GET /tags ───
 

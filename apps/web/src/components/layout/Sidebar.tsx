@@ -14,12 +14,14 @@ import {
   Tag,
   ShieldCheck,
   Shield,
+  Users,
   ChevronsLeft,
   ChevronsRight,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useSuperadminStore } from '@/stores/superadmin';
+import { isAdmin } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from './OrgSwitcher';
 
@@ -117,6 +119,7 @@ export function Sidebar() {
           ...baseNavItems,
           // Broadcast / Templates / Tags are the regular user's main tools.
           ...broadcastNavItems,
+          ...(isAdmin(user) ? [{ icon: Users, href: '/team', label: 'Team' }] : []),
           ...(user?.role === 'superadmin'
             ? [
                 { icon: ShieldCheck, href: '/admin', label: 'Admin' },

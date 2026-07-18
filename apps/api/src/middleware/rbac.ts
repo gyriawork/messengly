@@ -1,5 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import prisma from '../lib/prisma.js';
+
 type UserRole = 'superadmin' | 'admin' | 'user';
+type UserPermission = 'canCreateTags' | 'canSelfConnectMessengers' | 'canViewAllChats';
 
 // ─── Types ───
 
@@ -78,6 +81,48 @@ export function requireMinRole(minRole: UserRole) {
         error: {
           code: 'AUTH_INSUFFICIENT_PERMISSIONS',
           message: `This action requires at least ${minRole} role`,
+          statusCode: 403,
+        },
+      });
+    }
+  };
+}
+
+/**
+ * Require a per-user permission toggle (User.canCreateTags etc — see Task 6).
+ * Admin/superadmin always pass: these toggles exist to loosen or restrict a
+ * regular `user`, not to gate the roles that manage them.
+ *
+ * Reads the flag fresh from the DB on every request rather than trusting the
+ * JWT, so a toggle an admin flips takes effect on the very next request — no
+ * re-login needed for enforcement (the UI catches up whenever it next
+ * refetches /users/me).
+ *
+ * Usage:
+ *   fastify.post('/tags', { preHandler: [requirePermission('canCreateTags')] }, handler)
+ */
+export function requirePermission(permission: UserPermission) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.user) {
+      return reply.status(401).send({
+        error: { code: 'AUTH_TOKEN_EXPIRED', message: 'Authentication required', statusCode: 401 },
+      });
+    }
+
+    if (request.user.role === 'admin' || request.user.role === 'superadmin') {
+      return;
+    }
+
+    const record = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { canCreateTags: true, canSelfConnectMessengers: true, canViewAllChats: true },
+    });
+
+    if (!record?.[permission]) {
+      return reply.status(403).send({
+        error: {
+          code: 'AUTH_INSUFFICIENT_PERMISSIONS',
+          message: 'You do not have permission to perform this action. Ask your admin to enable it.',
           statusCode: 403,
         },
       });

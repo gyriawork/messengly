@@ -17,10 +17,12 @@ import {
   Settings,
   ShieldCheck,
   Shield,
+  Users,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
+import { isAdmin } from '@/lib/permissions';
 
 // Mirrors the desktop sidebar: Messenger and Wiki are intentionally hidden
 // there, so they don't belong in the mobile nav either.
@@ -96,6 +98,19 @@ export function BottomNav() {
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           ))}
+          {isAdmin(user) && (
+            <Link
+              href="/team"
+              onClick={() => setShowMore(false)}
+              className={cn(
+                'flex flex-col items-center gap-1.5 rounded-xl py-3 text-slate-500 transition-colors',
+                isActive('/team') ? 'bg-accent/10 text-accent' : 'hover:bg-slate-50',
+              )}
+            >
+              <Users className="h-5 w-5" />
+              <span className="text-[10px] font-medium">Team</span>
+            </Link>
+          )}
           {user?.role === 'superadmin' && (
             <>
               <Link

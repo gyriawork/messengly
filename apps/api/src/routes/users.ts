@@ -28,6 +28,11 @@ const updateUserBodySchema = z.object({
   role: z.enum(['superadmin', 'admin', 'user']).optional(),
   status: z.enum(['active', 'deactivated']).optional(),
   password: z.string().min(8).max(128).optional(),
+  // Per-user permission toggles (Task 6) — org admin manages these from the
+  // user's card. Enforced in rbac.ts requirePermission(), not just hidden in UI.
+  canCreateTags: z.boolean().optional(),
+  canSelfConnectMessengers: z.boolean().optional(),
+  canViewAllChats: z.boolean().optional(),
 });
 
 const updateProfileBodySchema = z.object({
@@ -63,6 +68,9 @@ function sanitizeUser(user: {
   status: string;
   avatar: string | null;
   organizationId: string | null;
+  canCreateTags: boolean;
+  canSelfConnectMessengers: boolean;
+  canViewAllChats: boolean;
   lastActiveAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -78,6 +86,13 @@ function sanitizeUser(user: {
     organizationId: user.organizationId,
     // Name + logo of the user's org, so the sidebar can brand the footer.
     organization: user.organization ?? null,
+    // Enforced server-side (rbac.ts requirePermission) — these are informational
+    // for the UI, never the source of truth for authorization.
+    permissions: {
+      canCreateTags: user.canCreateTags,
+      canSelfConnectMessengers: user.canSelfConnectMessengers,
+      canViewAllChats: user.canViewAllChats,
+    },
     lastActiveAt: user.lastActiveAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

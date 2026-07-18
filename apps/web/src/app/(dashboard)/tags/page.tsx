@@ -17,6 +17,8 @@ import { useTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useTa
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { useAuthStore } from '@/stores/auth';
+import { can } from '@/lib/permissions';
 
 // ─── Constants ───
 
@@ -221,10 +223,12 @@ function TagCard({
   tag,
   onEdit,
   onDelete,
+  canManage,
 }: {
   tag: { id: string; name: string; color: string; chatCount?: number };
   onEdit: () => void;
   onDelete: () => void;
+  canManage: boolean;
 }) {
   return (
     <div className="group flex items-center justify-between rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
@@ -243,24 +247,26 @@ function TagCard({
           {tag.chatCount ?? 0} chat{(tag.chatCount ?? 0) !== 1 ? 's' : ''}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          onClick={onEdit}
-          aria-label="Edit tag"
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          title="Edit tag"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-        <button
-          onClick={onDelete}
-          aria-label="Delete tag"
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-          title="Delete tag"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
+      {canManage && (
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            onClick={onEdit}
+            aria-label="Edit tag"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            title="Edit tag"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            aria-label="Delete tag"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+            title="Delete tag"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -272,6 +278,8 @@ export default function TagsPage() {
   const createMutation = useCreateTag();
   const updateMutation = useUpdateTag();
   const deleteMutation = useDeleteTag();
+  const user = useAuthStore((s) => s.user);
+  const canManageTags = can(user, 'canCreateTags');
 
   const [showCreate, setShowCreate] = useState(false);
   const [editingTag, setEditingTag] = useState<{
@@ -297,13 +305,15 @@ export default function TagsPage() {
             {tags.length} label{tags.length !== 1 ? 's' : ''} created
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
-        >
-          <Plus className="h-4 w-4" />
-          New label
-        </button>
+        {canManageTags && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" />
+            New label
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -323,13 +333,15 @@ export default function TagsPage() {
           title="No labels yet"
           description="Labels help you group chats so the right people are one click away."
           action={
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
-            >
-              <Plus className="h-4 w-4" />
-              Create first tag
-            </button>
+            canManageTags ? (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
+              >
+                <Plus className="h-4 w-4" />
+                Create first tag
+              </button>
+            ) : undefined
           }
         />
       ) : (
@@ -340,6 +352,7 @@ export default function TagsPage() {
               tag={tag}
               onEdit={() => setEditingTag(tag)}
               onDelete={() => setDeletingTag({ id: tag.id, name: tag.name })}
+              canManage={canManageTags}
             />
             </div>
           ))}

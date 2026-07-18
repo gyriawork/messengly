@@ -5,6 +5,12 @@ import { api, setAccessToken, clearTokens, registerTokenRefreshCallback } from '
 import { useSuperadminStore } from '@/stores/superadmin';
 import { queryClient } from '@/lib/query-client';
 
+interface UserPermissions {
+  canCreateTags: boolean;
+  canSelfConnectMessengers: boolean;
+  canViewAllChats: boolean;
+}
+
 interface User {
   id: string;
   email: string;
@@ -14,6 +20,13 @@ interface User {
   avatar?: string | null;
   /** The user's org name + logo, used to brand the sidebar footer. */
   organization?: { id: string; name: string; logo: string | null } | null;
+  /**
+   * Informational only — the API enforces these server-side on every
+   * request. Absent right after login (the login response doesn't include
+   * them); populated moments later once the dashboard layout's fetchMe() call
+   * resolves, and whenever an admin's toggle change is next fetched.
+   */
+  permissions?: UserPermissions;
 }
 
 interface AuthState {
