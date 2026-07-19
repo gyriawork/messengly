@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import { requireMinRole, getOrgId } from '../middleware/rbac.js';
 import { broadcastQueue } from '../lib/queue.js';
 import { getIO } from '../websocket/index.js';
+import { logActivity } from '../lib/activity-logger.js';
 
 /**
  * Markers an adapter puts on a failure that must never be retried.
@@ -135,6 +136,31 @@ function emitBroadcastStatus(organizationId: string, broadcastId: string, status
   } catch {
     // WebSocket might not be initialized in tests
   }
+}
+
+/** Fire-and-forget activity log entry for a cancel — never blocks the response. */
+function logBroadcastCancel(
+  request: FastifyRequest,
+  organizationId: string,
+  broadcastId: string,
+  resultStatus: 'canceled' | 'canceling',
+): void {
+  prisma.broadcast.findUnique({ where: { id: broadcastId }, select: { name: true } }).then((b) => {
+    if (!b) return;
+    return logActivity({
+      category: 'broadcast',
+      action: 'canceled',
+      description:
+        resultStatus === 'canceled'
+          ? `Broadcast "${b.name}" canceled`
+          : `Broadcast "${b.name}" canceling (was already sending)`,
+      targetType: 'broadcast',
+      targetId: broadcastId,
+      userId: request.user.id,
+      userName: request.user.name,
+      organizationId,
+    });
+  }).catch(() => { /* non-critical */ });
 }
 
 // ─── Plugin ───
@@ -647,6 +673,17 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         },
       });
 
+      logActivity({
+        category: 'broadcast',
+        action: 'created',
+        description: `Broadcast "${name}" created (${validChatIds.length} chat${validChatIds.length === 1 ? '' : 's'})`,
+        targetType: 'broadcast',
+        targetId: broadcast.id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId,
+      }).catch(() => { /* non-critical */ });
+
       return reply.status(201).send(full);
     },
   );
@@ -805,6 +842,17 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
       await prisma.broadcast.delete({ where: { id } });
 
+      logActivity({
+        category: 'broadcast',
+        action: 'deleted',
+        description: `Broadcast "${existing.name}" deleted`,
+        targetType: 'broadcast',
+        targetId: id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId,
+      }).catch(() => { /* non-critical */ });
+
       return reply.status(204).send();
     },
   );
@@ -897,6 +945,20 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         // WebSocket might not be initialized in tests
       }
 
+      prisma.broadcast.findUnique({ where: { id }, select: { name: true } }).then((b) => {
+        if (!b) return;
+        return logActivity({
+          category: 'broadcast',
+          action: 'sent',
+          description: `Broadcast "${b.name}" started sending (${chatCount} chat${chatCount === 1 ? '' : 's'})`,
+          targetType: 'broadcast',
+          targetId: id,
+          userId: request.user.id,
+          userName: request.user.name,
+          organizationId,
+        });
+      }).catch(() => { /* non-critical */ });
+
       return reply.send({ success: true });
     },
   );
@@ -934,6 +996,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           data: { status: 'skipped', errorReason: 'Broadcast canceled' },
         });
         emitBroadcastStatus(organizationId, id, 'canceled');
+        logBroadcastCancel(request, organizationId, id, 'canceled');
         return reply.send({ success: true, status: 'canceled' });
       }
 
@@ -944,6 +1007,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       });
       if (canceling.count > 0) {
         emitBroadcastStatus(organizationId, id, 'canceling');
+        logBroadcastCancel(request, organizationId, id, 'canceling');
         return reply.send({ success: true, status: 'canceling' });
       }
 
@@ -1121,6 +1185,17 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           chats: { select: { id: true, chatId: true, status: true } },
         },
       });
+
+      logActivity({
+        category: 'broadcast',
+        action: 'duplicated',
+        description: `Broadcast "${original.name}" duplicated as "${duplicate.name}"`,
+        targetType: 'broadcast',
+        targetId: duplicate.id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId,
+      }).catch(() => { /* non-critical */ });
 
       return reply.status(201).send(full);
     },

@@ -11,9 +11,17 @@ import { useTeamsRemoteLogin } from '@/hooks/useTeamsRemoteLogin';
  * logins — so the server runs a headless browser and we render its screen here.
  * The operator clicks and types into it as if it were their own.
  */
-export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
+export function TeamsRemoteLogin({
+  onClose,
+  forUserId,
+}: {
+  onClose: () => void;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
+}) {
   const { status, frameUrl, viewport, error, saving, start, stop, click, keyDown, save } =
     useTeamsRemoteLogin();
+  const startForTarget = () => void start(forUserId);
 
   // A successful login closes the modal; the integration list refetches itself.
   useEffect(() => {
@@ -51,7 +59,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <button
-            onClick={start}
+            onClick={startForTarget}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <Plug className="h-4 w-4" />
@@ -96,7 +104,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="text-center text-xs text-slate-500">
-            Click the picture and type as usual. We\u2019ll save everything once your chats appear.
+            Click the picture and type as usual. We&apos;ll save everything once your chats appear.
           </p>
 
           <div className="mx-auto flex max-w-md gap-2">
@@ -123,7 +131,7 @@ export function TeamsRemoteLogin({ onClose }: { onClose: () => void }) {
           <AlertCircle className="h-8 w-8 text-rose-500" />
           <p className="text-center text-sm text-slate-600">{error}</p>
           <button
-            onClick={start}
+            onClick={startForTarget}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
           >
             Try again

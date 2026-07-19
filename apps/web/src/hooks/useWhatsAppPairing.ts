@@ -59,11 +59,12 @@ export function useWhatsAppPairing() {
     }
   }, []);
 
-  const startPolling = useCallback((sessionName: string) => {
+  const startPolling = useCallback((sessionName: string, forUserId?: string) => {
     stopPolling();
     pollingRef.current = setInterval(async () => {
       try {
-        const data = await api.get<PairingStatusResponse>(`/api/integrations/whatsapp/pairing-status?sessionName=${sessionName}`);
+        const qs = new URLSearchParams({ sessionName, ...(forUserId ? { forUserId } : {}) });
+        const data = await api.get<PairingStatusResponse>(`/api/integrations/whatsapp/pairing-status?${qs}`);
 
         if (data.status === 'connected' || data.status === 'WORKING') {
           stopPolling();
@@ -87,14 +88,17 @@ export function useWhatsAppPairing() {
     }, 3000);
   }, [stopPolling, queryClient]);
 
-  const startPairing = useCallback(async () => {
+  const startPairing = useCallback(async (forUserId?: string) => {
     setStatus('starting');
     setError(null);
     setQrDataUrl(null);
     setStatusMessage('Starting WhatsApp pairing...');
 
     try {
-      const data = await api.post<PairingStartResponse>('/api/integrations/whatsapp/start-pairing', {});
+      const data = await api.post<PairingStartResponse>(
+        '/api/integrations/whatsapp/start-pairing',
+        forUserId ? { forUserId } : {},
+      );
 
       sessionNameRef.current = data.sessionName ?? null;
 
@@ -108,7 +112,7 @@ export function useWhatsAppPairing() {
       }
 
       if (data.sessionName) {
-        startPolling(data.sessionName);
+        startPolling(data.sessionName, forUserId);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start WhatsApp pairing';

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Shield, ShieldCheck, User as UserIcon, KeyRound, Ban, CheckCircle2, Unplug } from 'lucide-react';
+import { ArrowLeft, Shield, ShieldCheck, User as UserIcon, KeyRound, Ban, CheckCircle2, Unplug, Plug } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { humanizeError } from '@/lib/errors';
@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth';
 import { isAdmin } from '@/lib/permissions';
 import { useTeamUsers, useUpdateTeamUser, type TeamUser } from '@/hooks/useUsers';
 import { useIntegrations, useDisconnectIntegrationById } from '@/hooks/useIntegrations';
-import { messengers } from '@/components/settings/IntegrationsTab';
+import { messengers, ConnectModal, type MessengerInfo } from '@/components/settings/IntegrationsTab';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { CredentialReveal } from '@/components/settings/CredentialReveal';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -83,6 +83,7 @@ export default function TeamMemberPage() {
   const { data, isLoading } = useTeamUsers();
   const updateMutation = useUpdateTeamUser();
   const [resetCredentials, setResetCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [connectingMessenger, setConnectingMessenger] = useState<MessengerInfo | null>(null);
   const { data: integrationsData } = useIntegrations();
   const disconnectById = useDisconnectIntegrationById();
 
@@ -255,14 +256,8 @@ export default function TeamMemberPage() {
               <h2 className="mb-3 text-sm font-semibold text-slate-700">Messenger connections</h2>
               {(() => {
                 const theirs = (integrationsData?.integrations ?? []).filter((i) => i.userId === member.id);
-                if (theirs.length === 0) {
-                  return (
-                    <p className="text-sm text-slate-500">
-                      No messengers connected. {member.name} can connect their own from Settings
-                      {member.permissions.canSelfConnectMessengers ? '' : ' once you enable "Can connect own messengers" above'}.
-                    </p>
-                  );
-                }
+                const connectedKeys = new Set(theirs.map((i) => i.messenger));
+                const notConnected = messengers.filter((m) => !connectedKeys.has(m.key));
                 return (
                   <div className="space-y-2">
                     {theirs.map((integration) => {
@@ -294,11 +289,38 @@ export default function TeamMemberPage() {
                         </div>
                       );
                     })}
+                    {notConnected.map((info) => (
+                      <div key={info.key} className="flex items-center justify-between rounded-xl bg-white p-4 shadow-xs">
+                        <div className="flex items-center gap-3">
+                          <MessengerIcon messenger={info.key} size={32} />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{info.name}</p>
+                            <p className="text-xs text-slate-500">Not connected</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setConnectingMessenger(info)}
+                          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+                        >
+                          <Plug className="h-3.5 w-3.5" />
+                          Connect
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 );
               })()}
             </div>
           </>
+        )}
+
+        {connectingMessenger && (
+          <ConnectModal
+            messenger={connectingMessenger}
+            onClose={() => setConnectingMessenger(null)}
+            forUserId={member.id}
+            forUserName={member.name}
+          />
         )}
 
         {resetCredentials && (

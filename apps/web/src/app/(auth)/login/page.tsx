@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
@@ -249,6 +250,16 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Need an account? Ask your workspace admin for an invite.
+      </p>
+
+      <p className="mt-3 text-center text-xs text-slate-400">
+        <Link href="/privacy" className="hover:text-accent hover:underline">
+          Privacy Policy
+        </Link>
+        <span className="mx-2">·</span>
+        <Link href="/terms" className="hover:text-accent hover:underline">
+          Terms of Service
+        </Link>
       </p>
     </div>
   );

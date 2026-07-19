@@ -5,12 +5,15 @@ import { useState } from 'react';
 import { ArrowLeft, Plug, Unplug, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { humanizeError } from '@/lib/errors';
+import { cn } from '@/lib/utils';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { useAuthStore } from '@/stores/auth';
 import { can, isAdmin } from '@/lib/permissions';
 import { useIntegrations, useDisconnectIntegration, useDisconnectIntegrationById } from '@/hooks/useIntegrations';
 import { useTeamUsers } from '@/hooks/useUsers';
-import { messengers, ConnectModal, type MessengerInfo } from '@/components/settings/IntegrationsTab';
+import { messengers, ConnectModal, faqItems, type MessengerInfo } from '@/components/settings/IntegrationsTab';
+import { OrgMessengerConfigCard } from '@/components/settings/OrgMessengerConfigCard';
+import { useOrgMessengerConfig } from '@/hooks/useOrgMessengerConfig';
 import type { MessengerType } from '@/types/integration';
 
 export default function MessengerSettingsPage() {
@@ -19,6 +22,7 @@ export default function MessengerSettingsPage() {
   const user = useAuthStore((s) => s.user);
   const { data, isLoading } = useIntegrations();
   const { data: teamUsers } = useTeamUsers();
+  const { data: orgConfigData } = useOrgMessengerConfig();
   const disconnectMine = useDisconnectIntegration();
   const disconnectById = useDisconnectIntegrationById();
   const [connecting, setConnecting] = useState(false);
@@ -59,6 +63,11 @@ export default function MessengerSettingsPage() {
   const mine = allForMessenger.find((i) => i.userId === user?.id);
   const userNameFor = (userId: string) =>
     teamUsers?.find((u) => u.id === userId)?.name ?? (userId === user?.id ? 'You' : 'Unknown user');
+  // Only Telegram/Slack (and Gmail, hidden) carry org-level API credentials —
+  // WhatsApp pairs via WAHA sessions and Teams via a browser session, neither
+  // has an "app" to register.
+  const orgConfigEntry = orgConfigData?.find((e) => e.messenger === messenger);
+  const faq = faqItems.find((f) => f.messenger === messenger);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-6 md:py-8">
@@ -77,6 +86,14 @@ export default function MessengerSettingsPage() {
           <p className="text-sm text-slate-500">{info.description}</p>
         </div>
       </div>
+
+      {/* Admin view: this org's own API app credentials, if this messenger has any */}
+      {admin && orgConfigEntry && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">API credentials</h2>
+          <OrgMessengerConfigCard entry={orgConfigEntry} />
+        </div>
+      )}
 
       {/* Admin view: every org connection for this messenger */}
       {admin && (
@@ -156,6 +173,46 @@ export default function MessengerSettingsPage() {
           </div>
         )}
       </div>
+
+      {/* FAQ — how to connect this specific messenger */}
+      {faq && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">{faq.title}</h2>
+          <div className="rounded-xl bg-white p-5 shadow-xs">
+            <ol className="space-y-3">
+              {faq.steps.map((step, idx) => (
+                <li key={idx} className="flex gap-3">
+                  <span
+                    className={cn(
+                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                      faq.bgClass,
+                      faq.textClass,
+                    )}
+                  >
+                    {idx + 1}
+                  </span>
+                  <div className="pt-0.5 text-sm leading-relaxed text-slate-600">
+                    {step.text}
+                    {step.link && (
+                      <>
+                        {' '}
+                        <a
+                          href={step.link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          {step.link.label}
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
 
       {connecting && <ConnectModal messenger={info} onClose={() => setConnecting(false)} />}
     </div>

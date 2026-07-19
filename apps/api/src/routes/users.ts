@@ -6,6 +6,7 @@ import prisma from '../lib/prisma.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole, getOrgId } from '../middleware/rbac.js';
+import { logActivity } from '../lib/activity-logger.js';
 
 // ─── Zod Schemas ───
 
@@ -309,6 +310,17 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         loginUrl: `${process.env.APP_URL || 'http://localhost:3000'}/login`,
       });
 
+      logActivity({
+        category: 'users',
+        action: 'invited',
+        description: `${request.user.name} invited ${name} (${email}) as ${role}`,
+        targetType: 'user',
+        targetId: user.id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId,
+      }).catch(() => { /* non-critical */ });
+
       // When no email went out (provider unconfigured or send failed), the
       // inviter is the only delivery channel left — hand them the password
       // once so they can pass it on. It travels outside sanitizeUser on
@@ -399,6 +411,23 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         await prisma.refreshToken.deleteMany({ where: { userId: id } });
       }
 
+      const changes = Object.entries(fields)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => `${key} → ${value}`);
+      if (password) changes.push('password reset');
+      if (changes.length > 0) {
+        logActivity({
+          category: 'users',
+          action: 'updated',
+          description: `${request.user.name} updated ${targetUser.name}: ${changes.join(', ')}`,
+          targetType: 'user',
+          targetId: id,
+          userId: request.user.id,
+          userName: request.user.name,
+          organizationId: targetUser.organizationId ?? 'global',
+        }).catch(() => { /* non-critical */ });
+      }
+
       return reply.send(sanitizeUser(updated));
     },
   );
@@ -438,6 +467,17 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         }),
         prisma.refreshToken.deleteMany({ where: { userId: id } }),
       ]);
+
+      logActivity({
+        category: 'users',
+        action: 'deleted',
+        description: `${request.user.name} deleted ${target.name} (${target.email})`,
+        targetType: 'user',
+        targetId: id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId: target.organizationId ?? 'global',
+      }).catch(() => { /* non-critical */ });
 
       return reply.status(204).send();
     },

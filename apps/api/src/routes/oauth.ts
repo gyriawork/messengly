@@ -11,6 +11,28 @@ import { MessengerError } from '../integrations/base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getIO } from '../websocket/index.js';
+import { logActivity } from '../lib/activity-logger.js';
+
+/**
+ * OAuth callbacks carry no `request.user` — the state token is the only
+ * identity we have. Fire-and-forget; never blocks the redirect.
+ */
+function logOAuthConnected(organizationId: string, userId: string, messenger: string): void {
+  prisma.user.findUnique({ where: { id: userId }, select: { name: true } }).then((user) => {
+    if (!user) return;
+    return logActivity({
+      category: 'integrations',
+      action: 'connected',
+      description: `${user.name} connected ${messenger}`,
+      targetType: 'integration',
+      targetId: messenger,
+      userId,
+      userName: user.name,
+      organizationId,
+      metadata: { messenger },
+    });
+  }).catch(() => { /* non-critical */ });
+}
 
 
 // ─── Redis client for OAuth state storage ───
@@ -46,6 +68,30 @@ function getOrgId(request: FastifyRequest): string | null {
  */
 function connectScopeFor(request: FastifyRequest): 'org' | 'user' {
   return request.user.role === 'user' ? 'user' : 'org';
+}
+
+/**
+ * Same rule as routes/integrations.ts resolveConnectTarget() — kept as a
+ * local copy since oauth.ts doesn't import from integrations.ts. `forUserId`
+ * lets an admin+ connect on behalf of another org member; always a personal
+ * (`scope: 'user'`) connection for the target, never available to a plain user.
+ */
+async function resolveConnectTarget(
+  request: FastifyRequest,
+  organizationId: string,
+  forUserId: string | undefined,
+): Promise<{ userId: string; scope: 'org' | 'user' } | { error: string }> {
+  if (!forUserId || forUserId === request.user.id) {
+    return { userId: request.user.id, scope: connectScopeFor(request) };
+  }
+  if (request.user.role === 'user') {
+    return { error: 'Only an admin can connect a messenger on behalf of another user' };
+  }
+  const target = await prisma.user.findUnique({ where: { id: forUserId } });
+  if (!target || target.organizationId !== organizationId || target.deletedAt) {
+    return { error: 'Target user not found in this organization' };
+  }
+  return { userId: forUserId, scope: 'user' };
 }
 
 function getAppUrl(): string {
@@ -136,11 +182,19 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       // Store state in Redis with user context (TTL: 10 minutes). scope is
       // decided here (request.user is available) and carried through to the
-      // callback, which has no session — only the state token.
+      // callback, which has no session — only the state token. `forUserId`
+      // lets an admin+ connect Slack on behalf of another org member (from
+      // that user's Team card) — validated and resolved to a real target
+      // here so the callback never has to re-check permissions.
+      const query = request.query as Record<string, string | undefined>;
+      const target = await resolveConnectTarget(request, organizationId, query.forUserId);
+      if ('error' in target) {
+        return reply.redirect(`${getAppUrl()}/settings?integration=slack&status=error&error=forbidden`);
+      }
       const stateData = JSON.stringify({
-        userId: request.user.id,
+        userId: target.userId,
         organizationId,
-        scope: connectScopeFor(request),
+        scope: target.scope,
       });
       await getRedis().set(`oauth:slack:state:${state}`, stateData, 'EX', 600);
 
@@ -363,6 +417,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
           status: 'connected',
         });
       } catch { /* WS notification is best-effort */ }
+      logOAuthConnected(organizationId, userId, 'slack');
 
       // Redirect back to frontend with success
       return reply.redirect(
@@ -431,12 +486,20 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Generate a cryptographically random state token
       const state = randomBytes(32).toString('hex');
 
+      // `forUserId` lets an admin+ connect Gmail on behalf of another org
+      // member (from that user's Team card) — resolved here so the callback
+      // never has to re-check permissions.
+      const target = await resolveConnectTarget(request, organizationId, query.forUserId);
+      if ('error' in target) {
+        return reply.redirect(`${getAppUrl()}/settings?integration=gmail&status=error&error=forbidden`);
+      }
+
       // Store state in Redis with user context (TTL: 10 minutes)
       const stateData = JSON.stringify({
-        userId: request.user.id,
+        userId: target.userId,
         organizationId,
         importCount,
-        scope: connectScopeFor(request),
+        scope: target.scope,
       });
       await getRedis().set(`oauth:gmail:state:${state}`, stateData, 'EX', 600);
 
@@ -605,6 +668,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
           status: 'connected',
         });
       } catch { /* WS notification is best-effort */ }
+      logOAuthConnected(organizationId, userId, 'gmail');
 
       // Set up Gmail Pub/Sub watch for real-time notifications
       const gmailPubSubTopic = process.env.GMAIL_PUBSUB_TOPIC;

@@ -22,13 +22,16 @@ export function useConnectIntegration() {
     mutationFn: async ({
       messenger,
       payload,
+      forUserId,
     }: {
       messenger: MessengerType;
       payload: ConnectPayload;
+      /** Admin+ connecting on behalf of another org member (Team card). */
+      forUserId?: string;
     }) => {
       const result = await api.post<Integration>(
         `/api/integrations/${messenger}/connect`,
-        payload,
+        forUserId ? { ...payload, forUserId } : payload,
       );
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
       return result;
@@ -159,6 +162,8 @@ export function useTelegramVerifyCode() {
       phoneCodeHash: string;
       code: string;
       password?: string;
+      /** Admin+ connecting on behalf of another org member (Team card). */
+      forUserId?: string;
     }) => {
       const result = await api.post<TelegramVerifyCodeResponse>(
         '/api/integrations/telegram/verify-code',
@@ -174,7 +179,7 @@ export function useTelegramConnectSession() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload: { session: string; phoneNumber?: string }) => {
+    mutationFn: async (payload: { session: string; phoneNumber?: string; forUserId?: string }) => {
       const result = await api.post<TelegramVerifyCodeResponse>(
         '/api/integrations/telegram/connect-session',
         payload,
@@ -194,7 +199,8 @@ export interface TelegramQrStatus {
 
 export function useTelegramQrStart() {
   return useMutation({
-    mutationFn: async () => api.post<{ status: string }>('/api/integrations/telegram/qr/start'),
+    mutationFn: async (forUserId?: string) =>
+      api.post<{ status: string }>('/api/integrations/telegram/qr/start', forUserId ? { forUserId } : {}),
   });
 }
 

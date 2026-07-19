@@ -117,13 +117,17 @@ export function useTeamsRemoteLogin() {
     }
   }, [showFrame, finish]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (forUserId?: string) => {
     setError(null);
     setStatus('starting');
     stopped.current = false;
     consecutiveErrors.current = 0;
 
-    const startOnce = () => api.post<RemoteStartResponse>('/api/integrations/teams/remote/start');
+    const startOnce = () =>
+      api.post<RemoteStartResponse>(
+        '/api/integrations/teams/remote/start',
+        forUserId ? { forUserId } : {},
+      );
 
     try {
       let res: RemoteStartResponse;

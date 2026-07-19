@@ -152,8 +152,11 @@ const slackSchema = z.object({
 
 function TelegramConnectForm({
   onSuccess,
+  forUserId,
 }: {
   onSuccess: () => void;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
 }) {
   // QR-code login is the primary method — no verification code is involved.
   // Session-key paste is kept as a fallback.
@@ -172,7 +175,7 @@ function TelegramConnectForm({
   const beginQr = () => {
     setErrorMessage(null);
     setQrActive(false);
-    qrStart.mutate(undefined, {
+    qrStart.mutate(forUserId, {
       onSuccess: () => setQrActive(true),
       onError: (err) =>
         setErrorMessage(humanizeError(err, 'Failed to start QR login')),
@@ -219,7 +222,7 @@ function TelegramConnectForm({
   const handleSession = (data: z.infer<typeof telegramSessionSchema>) => {
     setErrorMessage(null);
     connectSessionMutation.mutate(
-      { session: data.session.trim(), phoneNumber: data.phoneNumber?.trim() || undefined },
+      { session: data.session.trim(), phoneNumber: data.phoneNumber?.trim() || undefined, forUserId },
       {
         onSuccess: () => {
           setDone(true);
@@ -398,9 +401,12 @@ function TelegramConnectForm({
 function SlackConnectForm({
   onSubmit,
   isPending,
+  forUserId,
 }: {
   onSubmit: (data: z.infer<typeof slackSchema>) => void;
   isPending: boolean;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
 }) {
   const { data: oauthStatus, isLoading: oauthLoading } = useSlackOAuthStatus();
   const [showManualToken, setShowManualToken] = useState(false);
@@ -421,6 +427,9 @@ function SlackConnectForm({
     const orgId = useSuperadminStore.getState().selectedOrgId;
     if (orgId) {
       url += `&organizationId=${encodeURIComponent(orgId)}`;
+    }
+    if (forUserId) {
+      url += `&forUserId=${encodeURIComponent(forUserId)}`;
     }
     window.location.href = url;
   };
@@ -517,7 +526,14 @@ function SlackConnectForm({
   );
 }
 
-function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
+function WhatsAppConnectForm({
+  onClose,
+  forUserId,
+}: {
+  onClose: () => void;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
+}) {
   const {
     status,
     qrDataUrl,
@@ -541,7 +557,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
             </p>
           </div>
           <button
-            onClick={startPairing}
+            onClick={() => startPairing(forUserId)}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <Plug className="h-4 w-4" />
@@ -605,7 +621,7 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-red-700">{error || 'An error occurred during pairing'}</p>
           </div>
           <button
-            onClick={() => { reset(); startPairing(); }}
+            onClick={() => { reset(); startPairing(forUserId); }}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
           >
             <RefreshCw className="h-4 w-4" />
@@ -619,9 +635,11 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
 
 const GMAIL_IMPORT_COUNTS = [10, 20, 50, 100, 200, 500] as const;
 
-function GmailConnectForm({}: {
+function GmailConnectForm({ forUserId }: {
   onSubmit: (data: Record<string, string>) => void;
   isPending: boolean;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
 }) {
   const { data: oauthData, isLoading: oauthLoading } = useGmailOAuthAvailable();
   const [importCount, setImportCount] = useState<number>(50);
@@ -636,6 +654,9 @@ function GmailConnectForm({}: {
     const orgId = useSuperadminStore.getState().selectedOrgId;
     if (orgId) {
       url += `&organizationId=${encodeURIComponent(orgId)}`;
+    }
+    if (forUserId) {
+      url += `&forUserId=${encodeURIComponent(forUserId)}`;
     }
     window.location.href = url;
   };
@@ -704,18 +725,27 @@ function GmailConnectForm({}: {
 export function ConnectModal({
   messenger,
   onClose,
+  forUserId,
+  forUserName,
 }: {
   messenger: MessengerInfo;
   onClose: () => void;
+  /** Admin+ connecting on behalf of another org member (Team card). */
+  forUserId?: string;
+  forUserName?: string;
 }) {
   const connectMutation = useConnectIntegration();
 
   const handleConnect = (payload: Record<string, string>) => {
     connectMutation.mutate(
-      { messenger: messenger.key, payload: payload as never },
+      { messenger: messenger.key, payload: payload as never, forUserId },
       {
         onSuccess: () => {
-          toast.success(`${messenger.name} connected successfully`);
+          toast.success(
+            forUserId
+              ? `${messenger.name} connected for ${forUserName ?? 'user'}`
+              : `${messenger.name} connected successfully`,
+          );
           onClose();
         },
         onError: (error) => {
@@ -744,7 +774,9 @@ export function ConnectModal({
               <h3 className="text-lg font-semibold text-slate-900">
                 Connect {messenger.name}
               </h3>
-              <p className="text-xs text-slate-500">{messenger.description}</p>
+              <p className="text-xs text-slate-500">
+                {forUserId ? `For ${forUserName ?? 'this teammate'} — ${messenger.description}` : messenger.description}
+              </p>
             </div>
           </div>
           <button
@@ -757,24 +789,26 @@ export function ConnectModal({
 
         {/* Messenger-specific form */}
         {messenger.key === 'telegram' && (
-          <TelegramConnectForm onSuccess={onClose} />
+          <TelegramConnectForm onSuccess={onClose} forUserId={forUserId} />
         )}
         {messenger.key === 'slack' && (
           <SlackConnectForm
             onSubmit={handleConnect}
             isPending={connectMutation.isPending}
+            forUserId={forUserId}
           />
         )}
         {messenger.key === 'whatsapp' && (
-          <WhatsAppConnectForm onClose={onClose} />
+          <WhatsAppConnectForm onClose={onClose} forUserId={forUserId} />
         )}
         {messenger.key === 'gmail' && (
           <GmailConnectForm
             onSubmit={handleConnect}
             isPending={connectMutation.isPending}
+            forUserId={forUserId}
           />
         )}
-        {messenger.key === 'teams' && <TeamsRemoteLogin onClose={onClose} />}
+        {messenger.key === 'teams' && <TeamsRemoteLogin onClose={onClose} forUserId={forUserId} />}
       </div>
     </div>
   );
@@ -1029,12 +1063,12 @@ function IntegrationCard({
 
 // ---------- FAQ Data ----------
 
-interface FaqStep {
+export interface FaqStep {
   text: string;
   link?: { url: string; label: string };
 }
 
-interface FaqItem {
+export interface FaqItem {
   messenger: MessengerType;
   title: string;
   abbr: string;
@@ -1043,7 +1077,7 @@ interface FaqItem {
   steps: FaqStep[];
 }
 
-const faqItems: FaqItem[] = [
+export const faqItems: FaqItem[] = [
   {
     messenger: 'telegram',
     title: 'How to connect Telegram',
@@ -1051,11 +1085,12 @@ const faqItems: FaqItem[] = [
     bgClass: 'bg-messenger-tg-bg',
     textClass: 'text-messenger-tg-text',
     steps: [
-      { text: 'Click "Connect" on the Telegram card above.' },
-      { text: 'Enter your phone number (with country code, e.g. +1234567890).' },
-      { text: 'A verification code will be sent to your Telegram app. Enter it on the next screen.' },
-      { text: 'If you have two-factor authentication enabled, you will also need to enter your 2FA password.' },
-      { text: 'Once verified, your Telegram account will be connected and ready to use.' },
+      { text: 'Click "Connect" on the Telegram card above — a QR code appears, no phone number or code needed.' },
+      { text: 'On your phone: Telegram → Settings → Devices → Link Desktop Device.' },
+      { text: 'Point your phone camera at the QR code shown on screen.' },
+      { text: 'If you have two-factor authentication enabled, enter your 2FA password when prompted.' },
+      { text: 'Once scanned, your Telegram account connects automatically — no further steps needed.' },
+      { text: 'QR not working? Expand "Advanced: connect with a session key instead" to paste a pre-generated session key.' },
     ],
   },
   {
@@ -1088,6 +1123,21 @@ const faqItems: FaqItem[] = [
       { text: 'Point your phone camera at the QR code on this screen.' },
       { text: 'Wait for the connection to be established. It may take a few seconds.' },
       { text: 'Once linked, your WhatsApp chats will be available for import. The session stays active as long as your phone has internet access.' },
+    ],
+  },
+  {
+    messenger: 'teams',
+    title: 'How to connect MS Teams',
+    abbr: 'MT',
+    bgClass: 'bg-messenger-mt-bg',
+    textClass: 'text-messenger-mt-text',
+    steps: [
+      { text: 'Click "Connect" — Teams has no API login for personal accounts, so a browser opens on the server and streams its screen to you here.' },
+      { text: 'Click into the picture and sign in exactly as you normally would, including any two-factor codes.' },
+      { text: 'Microsoft may show a space picker ("Личное" / organization) — pick your personal account.' },
+      { text: 'Wait until your chat list actually appears in the streamed browser.' },
+      { text: 'Press "Save session" — this is required, the connection is not saved automatically.' },
+      { text: 'Each teammate who connects their own Teams gets an isolated session — connecting yours never disturbs anyone else’s.' },
     ],
   },
   // Gmail FAQ intentionally hidden — service is focused on Slack/Telegram broadcasts.

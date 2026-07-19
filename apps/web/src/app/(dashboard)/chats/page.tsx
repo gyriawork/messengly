@@ -895,20 +895,27 @@ export default function ChatsPage() {
           ))}
         </select>
 
-        {/* Owner filter — Task 10: which connected-account owner's chats to show */}
+        {/* Owner filter — Task 10: which connected-account owner's chats to show.
+            Icon + "All owners" (rather than the bare "All chats" every other
+            filter uses) makes it clear this narrows the list to chats reachable
+            through one teammate's connected account, not a generic filter. */}
         {canFilterByOwner && (
-          <select
-            value={ownerIdFilter ?? ''}
-            onChange={(e) => setOwnerIdFilter(e.target.value || null)}
-            className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
-          >
-            <option value="">All chats</option>
-            {(teamUsers ?? [])
-              .filter((u) => u.status === 'active')
-              .map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-          </select>
+          <div className="relative">
+            <Users className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <select
+              value={ownerIdFilter ?? ''}
+              onChange={(e) => setOwnerIdFilter(e.target.value || null)}
+              title="Show only chats reachable through one teammate's connected messenger account"
+              className="rounded-lg border-[1.5px] border-slate-200 py-2 pl-8 pr-3 text-xs text-slate-600 focus:border-accent focus:outline-none"
+            >
+              <option value="">All owners</option>
+              {(teamUsers ?? [])
+                .filter((u) => u.status === 'active')
+                .map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+            </select>
+          </div>
         )}
 
         {/* Sort dropdown */}

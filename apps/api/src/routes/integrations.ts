@@ -22,7 +22,40 @@ import { getIO } from '../websocket/index.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { MESSENGERS } from '../lib/platform-constants.js';
+import { logActivity } from '../lib/activity-logger.js';
 import QRCode from 'qrcode';
+
+/**
+ * Fire-and-forget activity log entry for a connect/disconnect. `forUserId`
+ * covers admin-managed rows (an admin disconnecting another user's
+ * connection, or the org's shared connection) — the actor is always
+ * `request.user`, but the log names whose integration it was when that
+ * differs from the actor.
+ */
+function logIntegrationActivity(
+  request: FastifyRequest,
+  organizationId: string,
+  messenger: string,
+  action: 'connected' | 'disconnected',
+  opts?: { forUserId?: string; forUserName?: string },
+): void {
+  const targetsSelf = !opts?.forUserId || opts.forUserId === request.user.id;
+  const description = targetsSelf
+    ? `${request.user.name} ${action} ${messenger}`
+    : `${request.user.name} ${action} ${messenger} for ${opts?.forUserName ?? 'another user'}`;
+
+  logActivity({
+    category: 'integrations',
+    action,
+    description,
+    targetType: 'integration',
+    targetId: messenger,
+    userId: request.user.id,
+    userName: request.user.name,
+    organizationId,
+    metadata: targetsSelf ? { messenger } : { messenger, forUserId: opts?.forUserId },
+  }).catch(() => { /* non-critical */ });
+}
 
 // ─── Telegram QR-login sessions (in-memory, keyed by userId) ───
 // QR login needs no verification code: the user scans a QR with their phone and
@@ -39,6 +72,15 @@ interface QrLoginState {
   organizationId: string;
 }
 const qrLogins = new Map<string, QrLoginState>();
+
+/**
+ * Remembers which target a Teams remote-login flow is for, across the
+ * start → many screenshot polls → save round-trip — keyed by the actor
+ * (the admin/user actually driving the remote browser), since none of those
+ * later requests carry the target on their own. Populated at /remote/start,
+ * read at /remote/screenshot and /remote/save, cleared at /remote/stop.
+ */
+const teamsRemoteTargets = new Map<string, { ownerId: string; scope: 'org' | 'user'; ownerName?: string }>();
 
 // ─── Zod Schemas ───
 
@@ -83,6 +125,7 @@ const telegramVerifyCodeSchema = z.object({
   phoneCodeHash: z.string().min(1),
   code: z.string().min(1, 'Verification code is required'),
   password: z.string().optional(),
+  forUserId: z.string().uuid().optional(),
 });
 
 // Connect Telegram with a pre-generated user session key (StringSession).
@@ -91,6 +134,7 @@ const telegramVerifyCodeSchema = z.object({
 const telegramConnectSessionSchema = z.object({
   session: z.string().min(1, 'Session key is required'),
   phoneNumber: z.string().optional(),
+  forUserId: z.string().uuid().optional(),
 });
 
 // Map messenger to its credential schema
@@ -128,6 +172,41 @@ function getOrgId(request: FastifyRequest): string | null {
  */
 function connectScopeFor(request: FastifyRequest): 'org' | 'user' {
   return request.user.role === 'user' ? 'user' : 'org';
+}
+
+/**
+ * Read an optional `forUserId` off a raw (not-yet-schema-parsed) request body
+ * — every messenger's credential schema strips unknown keys by default, so
+ * this has to happen before that parse rather than by extending each one.
+ */
+function forUserIdFromBody(body: unknown): string | undefined {
+  const raw = (body as Record<string, unknown> | null)?.forUserId;
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+/**
+ * Who a NEW connection should be owned by, and its scope. `forUserId` lets an
+ * admin+ connect a messenger on behalf of another org member (from that
+ * user's Team card) — always a personal (`scope: 'user'`) connection for the
+ * target, never the org-shared one, and never available to a plain `user`.
+ * Absent (or targeting yourself): unchanged legacy behavior.
+ */
+async function resolveConnectTarget(
+  request: FastifyRequest,
+  organizationId: string,
+  forUserId: string | undefined,
+): Promise<{ userId: string; scope: 'org' | 'user'; userName?: string } | { error: string }> {
+  if (!forUserId || forUserId === request.user.id) {
+    return { userId: request.user.id, scope: connectScopeFor(request) };
+  }
+  if (request.user.role === 'user') {
+    return { error: 'Only an admin can connect a messenger on behalf of another user' };
+  }
+  const target = await prisma.user.findUnique({ where: { id: forUserId } });
+  if (!target || target.organizationId !== organizationId || target.deletedAt) {
+    return { error: 'Target user not found in this organization' };
+  }
+  return { userId: forUserId, scope: 'user', userName: target.name };
 }
 
 /** Return a safe integration object without raw credentials. */
@@ -279,7 +358,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
-      const scope = connectScopeFor(request);
+      const target = await resolveConnectTarget(request, organizationId, forUserIdFromBody(request.body));
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const { userId: ownerId, scope, userName: ownerName } = target;
 
       // Validate credentials based on messenger type
       const credentialSchema = credentialSchemas[messenger];
@@ -306,7 +389,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           messenger_organizationId_userId_scope: {
             messenger,
             organizationId,
-            userId: request.user.id,
+            userId: ownerId,
             scope,
           },
         },
@@ -349,7 +432,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               status: 'connected',
               credentials: encryptedCredentials,
               organizationId,
-              userId: request.user.id,
+              userId: ownerId,
               scope,
               connectedAt: new Date(),
             },
@@ -364,12 +447,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
 
       // Notify frontend immediately so the status badge updates without waiting for cache
       try {
         getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger, status: 'connected' });
       } catch { /* socket not ready yet — non-critical */ }
+      logIntegrationActivity(request, organizationId, messenger, 'connected', ownerId !== request.user.id ? { forUserId: ownerId, forUserName: ownerName } : undefined);
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -442,6 +526,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+      logIntegrationActivity(request, organizationId, messenger, 'disconnected');
 
       return reply.send({
         integration: sanitizeIntegration(updated),
@@ -503,6 +588,16 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${integration.userId}`));
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      if (integration.userId === request.user.id) {
+        logIntegrationActivity(request, organizationId, integration.messenger, 'disconnected');
+      } else {
+        const owner = await prisma.user.findUnique({ where: { id: integration.userId }, select: { name: true } });
+        logIntegrationActivity(request, organizationId, integration.messenger, 'disconnected', {
+          forUserId: integration.userId,
+          forUserName: owner?.name,
+        });
+      }
 
       return reply.send({ integration: sanitizeIntegration(updated) });
     },
@@ -597,6 +692,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try {
         getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger, status: 'connected' });
       } catch { /* socket not ready yet — non-critical */ }
+      logIntegrationActivity(request, organizationId, messenger, 'connected');
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -751,13 +847,20 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         );
       }
 
-      const { phoneNumber, phoneCodeHash, code, password } = bodyParsed.data;
+      const { phoneNumber, phoneCodeHash, code, password, forUserId } = bodyParsed.data;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
-      const scope = connectScopeFor(request);
+      const target = await resolveConnectTarget(request, organizationId, forUserId);
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const { userId: ownerId, scope, userName: ownerName } = target;
 
+      // The actor (admin or self) is who actually ran the phone/code steps —
+      // pending auth stays keyed by them regardless of who ends up owning
+      // the resulting integration.
       const pending = await getPendingAuth(request.user.id, phoneNumber);
       if (!pending) {
         return sendError(
@@ -822,7 +925,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             messenger_organizationId_userId_scope: {
               messenger: 'telegram',
               organizationId,
-              userId: request.user.id,
+              userId: ownerId,
               scope,
             },
           },
@@ -845,7 +948,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               status: 'connected',
               credentials: encryptedCredentials,
               organizationId,
-              userId: request.user.id,
+              userId: ownerId,
               scope,
               connectedAt: new Date(),
             },
@@ -857,12 +960,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         // Invalidate server-side cache so the next API fetch returns fresh status
         await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
 
         // Notify frontend immediately so the status badge updates
         try {
           getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
         } catch { /* socket not ready yet — non-critical */ }
+        logIntegrationActivity(request, organizationId, 'telegram', 'connected', ownerId !== request.user.id ? { forUserId: ownerId, forUserName: ownerName } : undefined);
 
         // Start persistent listener for incoming messages
         getTelegramManager().startListening(integration.id).catch((err) => {
@@ -903,12 +1007,16 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         );
       }
 
-      const { session, phoneNumber } = bodyParsed.data;
+      const { session, phoneNumber, forUserId } = bodyParsed.data;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
-      const scope = connectScopeFor(request);
+      const target = await resolveConnectTarget(request, organizationId, forUserId);
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const { userId: ownerId, scope, userName: ownerName } = target;
 
       // Validate the key by connecting (apiId/apiHash resolved from platform config).
       let adapter;
@@ -932,7 +1040,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             messenger_organizationId_userId_scope: {
               messenger: 'telegram',
               organizationId,
-              userId: request.user.id,
+              userId: ownerId,
               scope,
             },
           },
@@ -951,7 +1059,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               status: 'connected',
               credentials: encryptedCredentials,
               organizationId,
-              userId: request.user.id,
+              userId: ownerId,
               scope,
               connectedAt: new Date(),
             },
@@ -961,11 +1069,12 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         await adapter.disconnect().catch(() => {});
 
         await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
 
         try {
           getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
         } catch { /* socket not ready — non-critical */ }
+        logIntegrationActivity(request, organizationId, 'telegram', 'connected', ownerId !== request.user.id ? { forUserId: ownerId, forUserName: ownerName } : undefined);
 
         getTelegramManager().startListening(integration.id).catch((err) => {
           fastify.log.warn({ err }, 'Failed to start Telegram listener after connect-session');
@@ -1008,8 +1117,15 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
       const apiId = Number(platform.credentials.apiId);
       const apiHash = platform.credentials.apiHash as string;
+      // The actor (who's actually scanning the QR and polling /qr/status) —
+      // the in-memory session map stays keyed by them regardless of who ends
+      // up owning the resulting integration.
       const userId = request.user.id;
-      const scope = connectScopeFor(request);
+      const target = await resolveConnectTarget(request, organizationId, forUserIdFromBody(request.body));
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const { userId: ownerId, scope, userName: ownerName } = target;
 
       // Clean up any previous QR session for this user.
       const prev = qrLogins.get(userId);
@@ -1064,7 +1180,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           const encryptedCredentials = encryptCredentials({ session: sessionString, phoneNumber: '' });
 
           const existing = await prisma.integration.findUnique({
-            where: { messenger_organizationId_userId_scope: { messenger: 'telegram', organizationId, userId, scope } },
+            where: { messenger_organizationId_userId_scope: { messenger: 'telegram', organizationId, userId: ownerId, scope } },
           });
           let integration;
           if (existing) {
@@ -1079,7 +1195,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
                 status: 'connected',
                 credentials: encryptedCredentials,
                 organizationId,
-                userId,
+                userId: ownerId,
                 scope,
                 connectedAt: new Date(),
               },
@@ -1091,10 +1207,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           await client.disconnect().catch(() => {});
 
           await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
           try {
             getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
           } catch { /* socket not ready — non-critical */ }
+          logIntegrationActivity(request, organizationId, 'telegram', 'connected', ownerId !== request.user.id ? { forUserId: ownerId, forUserName: ownerName } : undefined);
           getTelegramManager().startListening(integration.id).catch((err) => {
             fastify.log.warn({ err }, 'Failed to start Telegram listener after QR login');
           });
@@ -1275,12 +1392,16 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const userId = request.user.id;
+      const target = await resolveConnectTarget(request, organizationId, forUserIdFromBody(request.body));
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const ownerId = target.userId;
       const webhookUrl = `${process.env.API_URL || 'http://localhost:3001'}/api/webhooks/waha`;
 
       try {
         // startWhatsAppPairing returns the actual WAHA session name (e.g. 'default' for free tier)
-        const actualSessionName = await startWhatsAppPairing(`wa-${organizationId.slice(0, 8)}-${userId.slice(0, 8)}`, webhookUrl);
+        const actualSessionName = await startWhatsAppPairing(`wa-${organizationId.slice(0, 8)}-${ownerId.slice(0, 8)}`, webhookUrl);
 
         // Wait for WAHA to initialize the session
         await new Promise((r) => setTimeout(r, 3000));
@@ -1323,13 +1444,16 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const { sessionName } = request.query as { sessionName?: string };
+      const { sessionName, forUserId } = request.query as { sessionName?: string; forUserId?: string };
       if (!sessionName) {
         return sendError(reply, 'VALIDATION_ERROR', 'sessionName query parameter is required', 422);
       }
 
-      const userId = request.user.id;
-      const scope = connectScopeFor(request);
+      const target = await resolveConnectTarget(request, organizationId, forUserId);
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      const { userId: ownerId, scope, userName: ownerName } = target;
 
       try {
         const status = await getPairingStatus(sessionName);
@@ -1360,7 +1484,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               messenger_organizationId_userId_scope: {
                 messenger: 'whatsapp',
                 organizationId,
-                userId,
+                userId: ownerId,
                 scope,
               },
             },
@@ -1376,19 +1500,20 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               credentials: encryptedCredentials,
               settings: { wahaSessionName: sessionName },
               organizationId,
-              userId,
+              userId: ownerId,
               scope,
               connectedAt: new Date(),
             },
           });
 
           await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
 
           // Notify frontend immediately so the status badge updates
           try {
             getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'whatsapp', status: 'connected' });
           } catch { /* socket not ready yet — non-critical */ }
+          logIntegrationActivity(request, organizationId, 'whatsapp', 'connected', ownerId !== request.user.id ? { forUserId: ownerId, forUserName: ownerName } : undefined);
 
           return reply.send({ status: 'connected' });
         }
@@ -1548,7 +1673,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     return scope === 'user' ? `u_${userId}` : undefined;
   }
 
-  async function upsertTeamsIntegration(organizationId: string, userId: string, scope: 'org' | 'user'): Promise<void> {
+  async function upsertTeamsIntegration(
+    request: FastifyRequest,
+    organizationId: string,
+    userId: string,
+    scope: 'org' | 'user',
+    ownerName?: string,
+  ): Promise<void> {
     const sessionKey = teamsSessionKeyFor(scope, userId);
     const credentials = encryptCredentials({
       status: 'connected',
@@ -1576,6 +1707,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     try {
       getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'connected' });
     } catch { /* socket not ready yet — non-critical */ }
+    logIntegrationActivity(request, organizationId, 'teams', 'connected', userId !== request.user.id ? { forUserId: userId, forUserName: ownerName } : undefined);
   }
 
   /**
@@ -1623,8 +1755,18 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     '/integrations/teams/remote/start',
     { preHandler: authPreHandlers, ...remoteStreamRateLimit },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+      const target = await resolveConnectTarget(request, organizationId, forUserIdFromBody(request.body));
+      if ('error' in target) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', target.error, 403);
+      }
+      teamsRemoteTargets.set(request.user.id, { ownerId: target.userId, scope: target.scope, ownerName: target.userName });
+
       try {
-        const sessionKey = teamsSessionKeyFor(connectScopeFor(request), request.user.id);
+        const sessionKey = teamsSessionKeyFor(target.scope, target.userId);
         return reply.send(await teamsAgent.remoteStart(sessionKey));
       } catch (err) {
         return sendTeamsAgentError(reply, err);
@@ -1648,7 +1790,16 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       try {
         const { image, loggedIn } = await teamsAgent.remoteScreenshot();
-        if (loggedIn) await upsertTeamsIntegration(organizationId, request.user.id, connectScopeFor(request));
+        if (loggedIn) {
+          const remoteTarget = teamsRemoteTargets.get(request.user.id);
+          await upsertTeamsIntegration(
+            request,
+            organizationId,
+            remoteTarget?.ownerId ?? request.user.id,
+            remoteTarget?.scope ?? connectScopeFor(request),
+            remoteTarget?.ownerName,
+          );
+        }
 
         return reply
           .header('Content-Type', 'image/jpeg')
@@ -1724,7 +1875,14 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       try {
         const result = await teamsAgent.remoteSave();
-        await upsertTeamsIntegration(organizationId, request.user.id, connectScopeFor(request));
+        const remoteTarget = teamsRemoteTargets.get(request.user.id);
+        await upsertTeamsIntegration(
+          request,
+          organizationId,
+          remoteTarget?.ownerId ?? request.user.id,
+          remoteTarget?.scope ?? connectScopeFor(request),
+          remoteTarget?.ownerName,
+        );
         return reply.send(result);
       } catch (err) {
         return sendTeamsAgentError(reply, err);
@@ -1737,7 +1895,8 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   fastify.post(
     '/integrations/teams/remote/stop',
     { preHandler: authPreHandlers, ...remoteStreamRateLimit },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      teamsRemoteTargets.delete(request.user.id);
       try {
         return reply.send(await teamsAgent.remoteStop());
       } catch (err) {
@@ -1779,6 +1938,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try {
         getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'disconnected' });
       } catch { /* socket not ready yet — non-critical */ }
+      logIntegrationActivity(request, organizationId, 'teams', 'disconnected');
 
       return reply.send({ disconnected: true });
     },
