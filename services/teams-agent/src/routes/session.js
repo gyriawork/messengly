@@ -26,6 +26,7 @@ const ERROR_STATUS = {
   KEY_NOT_ALLOWED: 400,
   NO_REMOTE_SESSION: 409,
   REMOTE_ALREADY_ACTIVE: 409,
+  REMOTE_LOGIN_BUSY: 409,
   NOT_ON_TEAMS: 409,
   CHAT_NOT_READY: 409,
 };
@@ -72,10 +73,13 @@ router.post('/check', async (req, res, next) => {
 
 router.post('/remote/start', async (req, res, next) => {
   try {
-    const { viewport } = await remote.start(sessionKeyFrom(req));
+    const driver = req.body && typeof req.body.driver === 'string' ? req.body.driver : null;
+    const { viewport } = await remote.start(sessionKeyFrom(req), driver);
     res.json({ started: true, viewport });
   } catch (err) {
-    if (/already active/i.test(err.message)) err.code = 'REMOTE_ALREADY_ACTIVE';
+    // REMOTE_LOGIN_BUSY (a different operator is logging in) already carries its
+    // code; only the legacy stale-state message needs mapping.
+    if (!err.code && /already active/i.test(err.message)) err.code = 'REMOTE_ALREADY_ACTIVE';
     handle(err, res, next);
   }
 });

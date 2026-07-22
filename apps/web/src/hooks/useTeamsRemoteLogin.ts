@@ -130,19 +130,11 @@ export function useTeamsRemoteLogin() {
       );
 
     try {
-      let res: RemoteStartResponse;
-      try {
-        res = await startOnce();
-      } catch (err) {
-        // A browser left behind by an abandoned attempt blocks a new one. Tear it
-        // down and retry once, rather than making the operator work it out.
-        if (err instanceof ApiError && err.code === 'REMOTE_ALREADY_ACTIVE') {
-          await api.post('/api/integrations/teams/remote/stop').catch(() => {});
-          res = await startOnce();
-        } else {
-          throw err;
-        }
-      }
+      // Do NOT force-stop an "already active" browser and retry — that used to
+      // hijack another operator's live login (they'd see each other's Microsoft
+      // screen). The agent now self-reclaims the SAME operator's orphaned login
+      // and rejects a DIFFERENT operator with a friendly REMOTE_LOGIN_BUSY (B2).
+      const res = await startOnce();
       setViewport(res.viewport);
       setStatus('streaming');
       void poll();

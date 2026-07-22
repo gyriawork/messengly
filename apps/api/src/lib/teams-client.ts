@@ -162,8 +162,10 @@ export class TeamsAgentClient {
   // The remote browser itself is one-login-at-a-time system-wide; sessionKey
   // only decides which file the resulting login gets saved into.
 
-  remoteStart(sessionKey?: string): Promise<TeamsRemoteStartResult> {
-    return this.request<TeamsRemoteStartResult>('POST', `/session/remote/start${this.sessionQuery(sessionKey)}`);
+  // `driver` = the Messengly user id driving this login. The agent serializes
+  // logins per operator so a second one can't hijack the shared browser (B2).
+  remoteStart(sessionKey?: string, driver?: string): Promise<TeamsRemoteStartResult> {
+    return this.request<TeamsRemoteStartResult>('POST', `/session/remote/start${this.sessionQuery(sessionKey)}`, driver ? { driver } : undefined);
   }
 
   /** Returns raw JPEG bytes plus the agent's login verdict from a response header. */

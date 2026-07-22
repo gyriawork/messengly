@@ -45,6 +45,9 @@ let session = {
   onDisconnected: null,
   /** Which Teams session this login will be saved into (see sessionPaths.js). */
   sessionKey: 'default',
+  /** The operator (Messengly user id) driving the current login. Used to keep
+   *  a second operator from hijacking the shared browser (B2). */
+  driver: null,
 };
 
 function touchActivity() {
@@ -56,15 +59,24 @@ function touchActivity() {
   }, INACTIVITY_TIMEOUT);
 }
 
-async function start(sessionKey = 'default') {
-  // Self-heal: if state says active but the browser is dead, force cleanup first
+async function start(sessionKey = 'default', driver = null) {
+  // Self-heal / ownership check when a browser already exists (B2).
   if (session.active || session.stopping || session.browser) {
     const stillAlive = !!(session.browser && typeof session.browser.isConnected === 'function' && session.browser.isConnected());
     if (!stillAlive) {
       logger.warn('Remote browser: stale state detected, forcing cleanup before start');
       try { await cleanup(); } catch (e) { logger.warn({ err: e.message }, 'Stale cleanup failed'); }
+    } else if (driver && session.driver && driver === session.driver) {
+      // The SAME operator is reclaiming their own orphaned login — safe to
+      // tear it down and restart for them.
+      logger.info('Remote browser: same operator reclaiming their session');
+      try { await cleanup(); } catch (e) { logger.warn({ err: e.message }, 'Reclaim cleanup failed'); }
     } else {
-      throw new Error('Remote session already active');
+      // A DIFFERENT operator must not hijack the live browser (they'd see the
+      // first operator's Microsoft login screen). Reject with a friendly code.
+      const busy = new Error('Another Teams login is in progress. Please wait a moment and try again.');
+      busy.code = 'REMOTE_LOGIN_BUSY';
+      throw busy;
     }
   }
 
@@ -74,6 +86,7 @@ async function start(sessionKey = 'default') {
   session.lastLoginCheck = 0;
   session.consecutiveLoggedIn = 0;
   session.sessionKey = sessionKey;
+  session.driver = driver;
 
   try {
     const proxy = getProxyConfig();

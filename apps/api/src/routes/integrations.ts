@@ -1751,6 +1751,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   /** Agent errors the caller can act on stay 4xx; everything else is a bad gateway. */
   function sendTeamsAgentError(reply: FastifyReply, err: unknown) {
     if (err instanceof TeamsAgentError) {
+      // m21: never leak the agent's internal address/host in the message when
+      // the sidecar is unreachable — show a friendly, stable message instead.
+      if (err.code === 'AGENT_UNREACHABLE') {
+        return sendError(reply, 'TEAMS_AGENT_UNAVAILABLE', 'The Teams login service is temporarily unavailable. Please try again in a few minutes.', 503);
+      }
       const statusCode = err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 502;
       return sendError(reply, err.code, err.message, statusCode);
     }
@@ -1790,7 +1795,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       try {
         const sessionKey = teamsSessionKeyFor(target.scope, target.userId);
-        return reply.send(await teamsAgent.remoteStart(sessionKey));
+        // driver = the acting operator, so the agent serializes two operators
+        // and lets one reclaim their own orphaned login (B2).
+        return reply.send(await teamsAgent.remoteStart(sessionKey, request.user.id));
       } catch (err) {
         return sendTeamsAgentError(reply, err);
       }
