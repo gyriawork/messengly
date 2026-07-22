@@ -51,24 +51,32 @@ export function estimateMessenger(
 
   let seconds = 0;
   let batch = 0;
-  let hourly = 0;
   let daily = 0;
   let sentToday = 0;
+  // Elapsed-seconds of each send still inside the rolling 60-min window. Mirrors
+  // the worker's real sliding hour (wait until the oldest send leaves the
+  // window), not the old "pause 60s and reset" model (M8).
+  const hourWindow: number[] = [];
 
   for (let i = 0; i < chatCount; i++) {
-    if (hourly >= cfg.maxMessagesPerHour) {
-      seconds += 60;
-      hourly = 0;
-    }
     if (daily >= cfg.maxMessagesPerDay) break;
     if (batch >= cfg.messagesPerBatch && batch > 0) {
       seconds += cfg.delayBetweenBatches;
       batch = 0;
     }
     if (batch > 0) seconds += cfg.delayBetweenMessages;
+
+    // Drop sends that have aged out of the last hour; if the hour is still full,
+    // jump forward to when the oldest one leaves it.
+    while (hourWindow.length > 0 && hourWindow[0]! <= seconds - 3600) hourWindow.shift();
+    if (hourWindow.length >= cfg.maxMessagesPerHour) {
+      seconds = hourWindow[0]! + 3600;
+      while (hourWindow.length > 0 && hourWindow[0]! <= seconds - 3600) hourWindow.shift();
+    }
+
     seconds += perSend;
+    hourWindow.push(seconds);
     batch++;
-    hourly++;
     daily++;
     sentToday++;
   }

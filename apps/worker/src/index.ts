@@ -158,6 +158,23 @@ function sleep(seconds: number): Promise<void> {
 }
 
 /**
+ * Sleep, but wake up early if the broadcast gets canceled — long batch pauses
+ * (up to ~300s for Teams) otherwise leave "Canceling" hanging for minutes (m23).
+ * Returns true if a cancel was observed during the wait.
+ */
+async function interruptibleSleep(seconds: number, broadcastId: string): Promise<boolean> {
+  const chunk = 3;
+  let waited = 0;
+  while (waited < seconds) {
+    await sleep(Math.min(chunk, seconds - waited));
+    waited += chunk;
+    const live = await prisma.broadcast.findUnique({ where: { id: broadcastId }, select: { status: true } });
+    if (live?.status === 'canceling' || live?.status === 'canceled') return true;
+  }
+  return false;
+}
+
+/**
  * Get antiban settings for a messenger+org, falling back to defaults.
  */
 async function getAntibanSettings(
@@ -518,7 +535,16 @@ async function sendMessengerBatch(
     // Batch boundary
     if (batchCount >= messagesPerBatch && batchCount > 0) {
       log.info(`Batch complete (${batchCount}/${messagesPerBatch}), waiting ${delayBetweenBatches}s`, { broadcastId, messenger });
-      await sleep(delayBetweenBatches);
+      if (await interruptibleSleep(delayBetweenBatches, broadcastId)) {
+        const remainingIds = messengerChats.slice(i).map((c) => c.id);
+        const res = await prisma.broadcastChat.updateMany({
+          where: { id: { in: remainingIds }, status: 'pending' },
+          data: { status: 'skipped', errorReason: 'Broadcast canceled by user' },
+        });
+        skipped += res.count;
+        log.info(`Cancel requested during batch pause — stopping ${messenger} batch`, { broadcastId, skipped: res.count });
+        break;
+      }
       batchCount = 0;
     }
 
