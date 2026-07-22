@@ -15,6 +15,7 @@ import messageRoutes from './routes/messages.js';
 import chatRoutes from './routes/chats.js';
 import chatPreferenceRoutes from './routes/chat-preferences.js';
 import tagRoutes from './routes/tags.js';
+import languageRoutes from './routes/languages.js';
 import integrationRoutes from './routes/integrations.js';
 import broadcastRoutes from './routes/broadcasts.js';
 import settingsRoutes from './routes/settings.js';
@@ -149,6 +150,7 @@ await fastify.register(messageRoutes, { prefix: '/api' });
 await fastify.register(chatRoutes, { prefix: '/api' });
 await fastify.register(chatPreferenceRoutes, { prefix: '/api' });
 await fastify.register(tagRoutes, { prefix: '/api' });
+await fastify.register(languageRoutes, { prefix: '/api' });
 await fastify.register(integrationRoutes, { prefix: '/api' });
 await fastify.register(broadcastRoutes, { prefix: '/api' });
 // broadcastAnalyticsRoutes removed — analytics route is already in broadcastRoutes

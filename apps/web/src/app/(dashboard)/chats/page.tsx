@@ -21,12 +21,13 @@ import {
   Download,
   RefreshCw,
   ListX,
+  Globe,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/dates';
 import { downloadXls } from '@/lib/xls';
-import { useChats, useAllChats, useBulkDeleteChats, useBulkUnlinkChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
+import { useChats, useAllChats, useBulkDeleteChats, useBulkUnlinkChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses, useLanguages, useBulkSetChatLanguage, useOwnerNames } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -88,11 +89,12 @@ function exportChatsToXls(chats: Chat[]) {
     c.chatType,
     ownerLabel(c),
     (c.tags ?? []).map((t) => t.name).join(', '),
+    (c.languages ?? []).map((l) => l.name).join(', '),
     formatDate(c.createdAt),
   ]);
   downloadXls(
     `chats-${new Date().toISOString().slice(0, 10)}`,
-    ['Name', 'Messenger', 'Type', 'Owner', 'Labels', 'Date created'],
+    ['Name', 'Messenger', 'Type', 'Owner', 'Labels', 'Language', 'Date created'],
     rows,
   );
 }
@@ -108,6 +110,8 @@ function AssignOwnerDropdown({
 }) {
   const [ownerName, setOwnerName] = useState('');
   const assignMutation = useBulkAssignChats();
+  // Existing owner names, so you can pick one instead of retyping it.
+  const { data: ownerNamesData } = useOwnerNames();
 
   const save = (value: string) => {
     assignMutation.mutate(
@@ -130,7 +134,7 @@ function AssignOwnerDropdown({
     <>
       <div className="fixed inset-0 z-10" onClick={onDone} />
       <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-        <p className="px-1 pb-1.5 text-xs font-medium text-slate-400">Set owner (any name)</p>
+        <p className="px-1 pb-1.5 text-xs font-medium text-slate-400">Pick existing or type a new owner</p>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -142,9 +146,15 @@ function AssignOwnerDropdown({
             value={ownerName}
             onChange={(e) => setOwnerName(e.target.value)}
             placeholder="e.g. John, Sales team…"
+            list="owner-name-options"
             autoFocus
             className="w-full rounded-lg border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
+          <datalist id="owner-name-options">
+            {(ownerNamesData?.names ?? []).map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
           <div className="flex gap-1.5">
             <button
               type="submit"
@@ -163,6 +173,80 @@ function AssignOwnerDropdown({
             </button>
           </div>
         </form>
+      </div>
+    </>
+  );
+}
+
+// ─── Set Language Dropdown (multi-value, pick existing or create) ───
+
+function SetLanguageDropdown({
+  selectedIds,
+  onDone,
+}: {
+  selectedIds: string[];
+  onDone: () => void;
+}) {
+  const [name, setName] = useState('');
+  const { data: languagesData } = useLanguages();
+  const setLang = useBulkSetChatLanguage();
+
+  const add = (value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    setLang.mutate(
+      { chatIds: selectedIds, languageName: v, action: 'add' },
+      {
+        onSuccess: () => {
+          toast.success(`Language "${v}" added to ${selectedIds.length} chat(s)`);
+          setName('');
+        },
+        onError: () => toast.error('Failed to set language'),
+      },
+    );
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-10" onClick={onDone} />
+      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+        <p className="px-1 pb-1.5 text-xs font-medium text-slate-400">Add a language (pick or create)</p>
+        <form onSubmit={(e) => { e.preventDefault(); add(name); }} className="flex gap-1.5">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. English, Ukrainian…"
+            list="language-options"
+            autoFocus
+            className="min-w-0 flex-1 rounded-lg border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+          <datalist id="language-options">
+            {(languagesData?.languages ?? []).map((l) => (
+              <option key={l.id} value={l.name} />
+            ))}
+          </datalist>
+          <button
+            type="submit"
+            disabled={setLang.isPending || !name.trim()}
+            className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          >
+            Add
+          </button>
+        </form>
+        {(languagesData?.languages ?? []).length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(languagesData?.languages ?? []).map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => add(l.name)}
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 transition-colors hover:bg-slate-200"
+              >
+                + {l.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
@@ -279,6 +363,7 @@ function BulkActions({
 }) {
   const [showAssign, setShowAssign] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteMutation = useBulkDeleteChats();
   const unlinkMutation = useBulkUnlinkChats();
@@ -344,6 +429,23 @@ function BulkActions({
             selectedIds={selectedIds}
             selectedChats={selectedChats}
             onDone={() => { setShowTagMenu(false); }}
+          />
+        )}
+      </div>
+
+      {/* Set Language */}
+      <div className="relative">
+        <button
+          onClick={() => { setShowLangMenu(!showLangMenu); setShowAssign(false); setShowTagMenu(false); }}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Set Language
+        </button>
+        {showLangMenu && (
+          <SetLanguageDropdown
+            selectedIds={selectedIds}
+            onDone={() => { setShowLangMenu(false); }}
           />
         )}
       </div>
@@ -559,6 +661,9 @@ function GroupRow({
         </div>
       </td>
 
+      {/* Language — N/A for groups */}
+      <td className="px-4 py-3 text-xs text-slate-300">—</td>
+
       {/* Last active */}
       <td className="px-4 py-3 text-xs text-slate-500">
         {formatDate(
@@ -655,12 +760,14 @@ export default function ChatsPage() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [ownerIdFilter, setOwnerIdFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'createdAt' | 'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate' | 'ownerName' | 'status'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
 
   const { data: tagsData } = useTags();
+  const { data: languagesData } = useLanguages();
 
   // Streams ALL pages in — no more silent truncation at 1000 chats.
   const {
@@ -678,6 +785,7 @@ export default function ChatsPage() {
     status: statusFilter || undefined,
     ownerId: ownerIdFilter || undefined,
     tagId: tagFilter || undefined,
+    languageId: languageFilter || undefined,
   });
 
   // Reachability summary comes from the server now (org-wide, filter-independent).
@@ -939,6 +1047,19 @@ export default function ChatsPage() {
           ))}
         </select>
 
+        {/* Language filter */}
+        <select
+          value={languageFilter ?? ''}
+          onChange={(e) => setLanguageFilter(e.target.value || null)}
+          className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="">All languages</option>
+          <option value="none">No language</option>
+          {(languagesData?.languages ?? []).map((lang) => (
+            <option key={lang.id} value={lang.id}>{lang.name}</option>
+          ))}
+        </select>
+
         {/* Owner filter — Task 10: which connected-account owner's chats to show.
             Icon + "All owners" (rather than the bare "All chats" every other
             filter uses) makes it clear this narrows the list to chats reachable
@@ -1196,6 +1317,9 @@ export default function ChatsPage() {
                   Labels
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Language
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
                   Date Created
                 </th>
                 <th className="w-10 px-3 py-3" />
@@ -1306,6 +1430,23 @@ export default function ChatsPage() {
                       </div>
                     </td>
 
+                    {/* Language */}
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 flex-wrap">
+                        {(chat.languages ?? []).map((lang) => (
+                          <span
+                            key={lang.id}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
+                          >
+                            {lang.name}
+                          </span>
+                        ))}
+                        {(!chat.languages || chat.languages.length === 0) && (
+                          <span className="text-[10px] text-slate-300">—</span>
+                        )}
+                      </div>
+                    </td>
+
                     {/* Date created */}
                     <td className="px-4 py-3 text-xs text-slate-500">
                       {formatDate(chat.createdAt)}
@@ -1320,7 +1461,7 @@ export default function ChatsPage() {
               })}
               {hasMoreRows && (
                 <tr>
-                  <td colSpan={9} className="p-0">
+                  <td colSpan={10} className="p-0">
                     <LoadMoreSentinel onVisible={growWindow} />
                   </td>
                 </tr>

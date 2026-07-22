@@ -29,6 +29,7 @@ const listChatsQuerySchema = z.object({
   // looks like a wrong result to the user).
   searchScope: z.enum(['name', 'all']).default('all'),
   tagId: z.union([z.string().uuid(), z.literal('none')]).optional(),
+  languageId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   scope: z.enum(['org', 'my']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(1000).default(50),
@@ -54,6 +55,16 @@ const bulkTagBodySchema = z.object({
   chatIds: z.array(z.string().uuid()).min(1).max(500),
   tagId: z.string().uuid(),
   action: z.enum(['add', 'remove']),
+});
+
+const bulkLanguageBodySchema = z.object({
+  chatIds: z.array(z.string().uuid()).min(1).max(500),
+  // Either an existing language id, or a name to create-on-the-fly (add only).
+  languageId: z.string().uuid().optional(),
+  languageName: z.string().min(1).max(60).optional(),
+  action: z.enum(['add', 'remove']),
+}).refine((d) => d.languageId || d.languageName, {
+  message: 'languageId or languageName is required',
 });
 
 const bulkDeleteBodySchema = z.object({
@@ -125,7 +136,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
       }
 
-      const { messenger, status, owner, ownerId, search, searchScope, tagId, scope, page, limit } = parsed.data;
+      const { messenger, status, owner, ownerId, search, searchScope, tagId, languageId, scope, page, limit } = parsed.data;
 
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -140,7 +151,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       // likewise: a name-scoped and all-scoped request share the same `search`
       // string and would otherwise collide within the TTL.
       const queryHash = createHash('md5')
-        .update(JSON.stringify({ messenger, status, owner, search, searchScope, tagId, scope, page, limit, userId: request.user.id, effectiveOwnerId }))
+        .update(JSON.stringify({ messenger, status, owner, search, searchScope, tagId, languageId, scope, page, limit, userId: request.user.id, effectiveOwnerId }))
         .digest('hex')
         .slice(0, 12);
 
@@ -188,6 +199,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       } else if (tagId) {
         where.tags = { some: { tagId } };
       }
+      if (languageId === 'none') {
+        // Only chats with zero languages.
+        where.languages = { none: {} };
+      } else if (languageId) {
+        where.languages = { some: { languageId } };
+      }
 
       const [chats, total, statusGroups] = await Promise.all([
         prisma.chat.findMany({
@@ -195,6 +212,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           include: {
             tags: {
               select: { tag: { select: { id: true, name: true, color: true } } },
+            },
+            languages: {
+              select: { language: { select: { id: true, name: true, color: true } } },
             },
             owner: {
               select: { id: true, name: true },
@@ -261,6 +281,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           name: ct.tag.name,
           color: ct.tag.color,
         })),
+        languages: chat.languages.map((cl) => ({
+          id: cl.language.id,
+          name: cl.language.name,
+          color: cl.language.color,
+        })),
         // Pass-through includes fromEmail (selected above) — required by /chats Gmail grouping.
         lastMessage: chat.messages[0] ?? null,
         preferences: chat.preferences[0]
@@ -314,6 +339,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           tags: {
             include: { tag: true },
           },
+          languages: {
+            select: { language: { select: { id: true, name: true, color: true } } },
+          },
           owner: {
             select: { id: true, name: true, email: true },
           },
@@ -352,6 +380,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           id: ct.tag.id,
           name: ct.tag.name,
           color: ct.tag.color,
+        })),
+        languages: chat.languages.map((cl) => ({
+          id: cl.language.id,
+          name: cl.language.name,
+          color: cl.language.color,
         })),
         participants: chat.participants,
         preferences: chat.preferences[0]
@@ -1206,6 +1239,91 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ updated: validChatIds.length });
+    },
+  );
+
+  // ─── POST /chats/bulk/language ───
+  // Add/remove a language on chats. Supports create-on-the-fly: pass a
+  // languageName that doesn't exist yet and it is created for the org.
+
+  fastify.post(
+    '/chats/bulk/language',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = bulkLanguageBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { chatIds, languageId, languageName, action } = parsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      // Resolve (or create) the target language, scoped to the org.
+      let language;
+      if (languageId) {
+        language = await prisma.language.findFirst({ where: { id: languageId, organizationId } });
+        if (!language) {
+          return sendError(reply, 'RESOURCE_NOT_FOUND', `Language with id ${languageId} not found`, 404);
+        }
+      } else {
+        const name = languageName!.trim();
+        language = await prisma.language.findFirst({
+          where: { organizationId, name: { equals: name, mode: 'insensitive' } },
+        });
+        if (!language) {
+          if (action === 'remove') {
+            return reply.send({ updated: 0 }); // nothing to remove
+          }
+          language = await prisma.language.create({ data: { name, organizationId } });
+        }
+      }
+
+      // Validate all chats belong to org
+      const validChats = await prisma.chat.findMany({
+        where: { id: { in: chatIds }, organizationId },
+        select: { id: true },
+      });
+      const validChatIds = validChats.map((c) => c.id);
+
+      if (action === 'add') {
+        await prisma.chatLanguage.createMany({
+          data: validChatIds.map((chatId) => ({ chatId, languageId: language!.id })),
+          skipDuplicates: true,
+        });
+      } else {
+        await prisma.chatLanguage.deleteMany({
+          where: { chatId: { in: validChatIds }, languageId: language.id },
+        });
+      }
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      return reply.send({ updated: validChatIds.length, language: { id: language.id, name: language.name, color: language.color } });
+    },
+  );
+
+  // ─── GET /chats/owner-names ───
+  // Distinct existing owner labels for the org — feeds the "pick existing or
+  // create" owner combobox on the chats page.
+
+  fastify.get(
+    '/chats/owner-names',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+      const rows = await prisma.chat.findMany({
+        where: { organizationId, deletedAt: null, ownerName: { not: null } },
+        distinct: ['ownerName'],
+        select: { ownerName: true },
+        orderBy: { ownerName: 'asc' },
+      });
+      return reply.send({ names: rows.map((r) => r.ownerName).filter((n): n is string => !!n) });
     },
   );
 

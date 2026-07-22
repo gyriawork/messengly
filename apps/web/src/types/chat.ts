@@ -39,6 +39,11 @@ export interface Chat {
     name: string;
     color: string;
   }>;
+  languages?: Array<{
+    id: string;
+    name: string;
+    color?: string | null;
+  }>;
   preferences?: {
     pinned: boolean;
     favorite: boolean;
@@ -96,5 +101,7 @@ export interface ChatFilters {
   ownerId?: string;
   /** A tag UUID, or the sentinel 'none' to show only chats with zero labels. */
   tagId?: string;
+  /** A language UUID, or 'none' to show only chats with zero languages. */
+  languageId?: string;
   limit?: number;
 }

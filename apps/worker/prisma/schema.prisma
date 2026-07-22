@@ -25,6 +25,7 @@ model Organization {
   broadcasts           Broadcast[]
   templates            Template[]
   tags                 Tag[]
+  languages            Language[]
   integrations         Integration[]
   messengerConfigs     OrgMessengerConfig[]
   antibanSettings      AntibanSettings[]
@@ -126,6 +127,7 @@ model Chat {
 
   messages         Message[]
   tags             ChatTag[]
+  languages        ChatLanguage[]
   preferences      ChatPreference[]
   broadcastChats   BroadcastChat[]
   participants     ChatParticipant[]
@@ -166,6 +168,30 @@ model ChatTag {
 
   @@id([chatId, tagId])
   @@index([tagId])
+}
+
+// Per-chat language labels (Item 3). Structurally identical to Tag/ChatTag —
+// a chat can carry MULTIPLE languages. color is optional (languages render as
+// neutral chips when unset).
+model Language {
+  id             String   @id @default(uuid())
+  name           String
+  color          String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  chats          ChatLanguage[]
+
+  @@unique([name, organizationId])
+}
+
+model ChatLanguage {
+  chatId     String
+  languageId String
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  language   Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, languageId])
+  @@index([languageId])
 }
 
 model ChatPreference {

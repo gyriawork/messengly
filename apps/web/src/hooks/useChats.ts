@@ -38,6 +38,7 @@ export function useChats(filters?: ChatFilters) {
       if (filters?.owner) params.set('owner', filters.owner);
       if (filters?.ownerId) params.set('ownerId', filters.ownerId);
       if (filters?.tagId) params.set('tagId', filters.tagId);
+      if (filters?.languageId) params.set('languageId', filters.languageId);
       if (filters?.limit) params.set('limit', String(filters.limit));
       const query = params.toString();
       return api.get<ChatsResponse>(
@@ -67,6 +68,7 @@ export function useAllChats(filters?: Omit<ChatFilters, 'limit'>) {
       if (filters?.owner) params.set('owner', filters.owner);
       if (filters?.ownerId) params.set('ownerId', filters.ownerId);
       if (filters?.tagId) params.set('tagId', filters.tagId);
+      if (filters?.languageId) params.set('languageId', filters.languageId);
       params.set('page', String(pageParam));
       params.set('limit', String(ALL_CHATS_PAGE_SIZE));
       return api.get<ChatsResponse>(`/api/chats?${params.toString()}`);
@@ -373,6 +375,43 @@ export function useBulkTagChats() {
   return useMutation({
     mutationFn: (data: { chatIds: string[]; tagId: string; action: 'add' | 'remove' }) => api.post('/api/chats/bulk/tag', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
+  });
+}
+
+// ─── Languages (Item 3) ───
+
+export interface Language {
+  id: string;
+  name: string;
+  color?: string | null;
+  chatCount?: number;
+}
+
+export function useLanguages() {
+  return useQuery({
+    queryKey: ['languages'],
+    queryFn: () => api.get<{ languages: Language[] }>('/api/languages'),
+  });
+}
+
+/** Add/remove a language on chats. Pass languageName to create-on-the-fly. */
+export function useBulkSetChatLanguage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { chatIds: string[]; languageId?: string; languageName?: string; action: 'add' | 'remove' }) =>
+      api.post('/api/chats/bulk/language', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['chats'] });
+      qc.invalidateQueries({ queryKey: ['languages'] });
+    },
+  });
+}
+
+/** Distinct existing owner labels — for the "pick existing or create" combobox. */
+export function useOwnerNames() {
+  return useQuery({
+    queryKey: ['owner-names'],
+    queryFn: () => api.get<{ names: string[] }>('/api/chats/owner-names'),
   });
 }
 
