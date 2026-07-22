@@ -1581,28 +1581,25 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       const { messenger } = paramsParsed.data;
 
       try {
-        // Resolve the organization's connected integration (any member —
-        // typically connected by the superadmin) so any user can list its chats.
-        const integration = await prisma.integration.findFirst({
-          where: { messenger, organizationId, status: 'connected' },
-          orderBy: { createdAt: 'asc' },
+        // A plain user only ever lists chats through their OWN connected
+        // account — falling back to the org's oldest row (as before) let a
+        // user without their own connection browse whoever connected first's
+        // chats. Admin+ keeps the legacy behavior: own row first, else the
+        // org's oldest connected row.
+        const isPlainUser = request.user.role === 'user';
+        const integration = await resolveIntegration(messenger, organizationId, {
+          userId: request.user.id,
+          ownOnly: isPlainUser,
         });
 
         if (!integration) {
           return sendError(
             reply,
             'RESOURCE_NOT_FOUND',
-            `No connected ${messenger} account found. Ask your administrator to connect it first.`,
+            isPlainUser
+              ? `You don't have a connected ${messenger} account. Connect it in Settings → My Messengers first.`
+              : `No connected ${messenger} account found. Connect it first.`,
             404,
-          );
-        }
-
-        if (integration.status !== 'connected') {
-          return sendError(
-            reply,
-            'VALIDATION_ERROR',
-            `${messenger} integration is not connected`,
-            400,
           );
         }
 

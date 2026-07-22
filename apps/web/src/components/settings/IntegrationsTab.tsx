@@ -25,6 +25,7 @@ import { humanizeError } from '@/lib/errors';
 import { formatDateTime } from '@/lib/dates';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getAccessToken } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth';
 import { useSuperadminStore } from '@/stores/superadmin';
 import {
   useIntegrations,
@@ -1252,6 +1253,7 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
   const { data, isLoading } = useIntegrations();
   const { data: availableData } = useAvailableIntegrations();
   const { data: orgConfigData } = useOrgMessengerConfig();
+  const me = useAuthStore((s) => s.user);
   // Gmail is intentionally hidden from settings/connections (Task 2).
   const visibleOrgConfig = orgConfigData?.filter((entry) => entry.messenger !== 'gmail') ?? [];
   const connectMutation = useConnectIntegration();
@@ -1262,10 +1264,23 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
 
   const integrationsByMessenger = useMemo(() =>
     (data?.integrations ?? []).reduce<Record<string, Integration>>((acc, int) => {
-      acc[int.messenger] = int;
+      // GET /integrations returns every row for the org (orderBy createdAt
+      // desc) — more than one can exist per messenger since per-user
+      // connections landed. The status card for a messenger must reflect
+      // MY OWN connection when I have one, not whichever row happened to
+      // win the iteration order. Priority: my own row > the org-shared
+      // (scope:'org') row > whatever was seen first.
+      const current = acc[int.messenger];
+      if (!current) {
+        acc[int.messenger] = int;
+      } else if (int.userId === me?.id) {
+        acc[int.messenger] = int;
+      } else if (current.userId !== me?.id && int.scope === 'org' && current.scope !== 'org') {
+        acc[int.messenger] = int;
+      }
       return acc;
     }, {}),
-    [data?.integrations],
+    [data?.integrations, me?.id],
   );
 
   // Auto-open wizard after OAuth redirect (e.g. Slack, Gmail)

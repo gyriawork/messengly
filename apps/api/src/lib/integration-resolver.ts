@@ -14,6 +14,9 @@ export interface ResolveIntegrationOptions {
   integrationId?: string;
   /** Prefer this user's personal (scope='user') connection for the messenger. */
   userId?: string;
+  /** When true, NEVER fall back to the org's oldest row: return the
+   *  userId's own scope:'user' connected row or null. */
+  ownOnly?: boolean;
 }
 
 /**
@@ -55,6 +58,8 @@ export async function resolveIntegration(
       return personal;
     }
   }
+
+  if (opts.ownOnly) return null;
 
   return prisma.integration.findFirst({
     where: { messenger, organizationId, status: 'connected' },
