@@ -21,6 +21,7 @@ import {
   Paperclip,
   AlertCircle,
   AlertTriangle,
+  Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import {
 } from '@/hooks/useBroadcasts';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useTags } from '@/hooks/useTags';
+import { useLanguages } from '@/hooks/useChats';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { useTeamUsers } from '@/hooks/useUsers';
 import { useAuthStore } from '@/stores/auth';
@@ -101,7 +103,10 @@ export function BroadcastWizard() {
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(
     null,
   );
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null);
+  // Per-tag filter state: include (must have) / exclude (must not have) / off.
+  const [tagStates, setTagStates] = useState<Record<string, 'include' | 'exclude'>>({});
+  const [showTagFilter, setShowTagFilter] = useState(false);
   const [broadcastAttachments, setBroadcastAttachments] = useState<BroadcastAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
@@ -119,6 +124,8 @@ export function BroadcastWizard() {
   const { data: templatesData } = useTemplates();
   const { data: tagsData } = useTags();
   const tags = tagsData?.tags ?? [];
+  const { data: languagesData } = useLanguages();
+  const languages = languagesData?.languages ?? [];
   const templateUseMutation = useTemplateUse();
   const createMutation = useCreateBroadcast();
   const updateMutation = useUpdateBroadcast();
@@ -168,10 +175,29 @@ export function BroadcastWizard() {
   const scheduledAt = watch('scheduledAt');
   const name = watch('name');
 
+  const includeTagIds = useMemo(
+    () => Object.keys(tagStates).filter((id) => tagStates[id] === 'include'),
+    [tagStates],
+  );
+  const excludeTagIds = useMemo(
+    () => Object.keys(tagStates).filter((id) => tagStates[id] === 'exclude'),
+    [tagStates],
+  );
+  const hasActiveFilters = Boolean(
+    messengerFilter || languageFilter || chatSearch || includeTagIds.length || excludeTagIds.length,
+  );
+
   const filteredChats = useMemo(() => {
     return allChats.filter((chat) => {
       if (messengerFilter && chat.messenger !== messengerFilter) return false;
-      if (tagFilter && !(chat.tags ?? []).some((t) => t.id === tagFilter))
+      if (languageFilter && !(chat.languages ?? []).some((l) => l.id === languageFilter))
+        return false;
+      const chatTagIds = (chat.tags ?? []).map((t) => t.id);
+      // Include: chat must carry at least one of the included tags.
+      if (includeTagIds.length > 0 && !includeTagIds.some((id) => chatTagIds.includes(id)))
+        return false;
+      // Exclude: chat must carry none of the excluded tags.
+      if (excludeTagIds.length > 0 && excludeTagIds.some((id) => chatTagIds.includes(id)))
         return false;
       if (
         chatSearch &&
@@ -180,7 +206,17 @@ export function BroadcastWizard() {
         return false;
       return true;
     });
-  }, [allChats, messengerFilter, tagFilter, chatSearch]);
+  }, [allChats, messengerFilter, languageFilter, includeTagIds, excludeTagIds, chatSearch]);
+
+  const cycleTag = (id: string) => {
+    setTagStates((prev) => {
+      const next = { ...prev };
+      if (!next[id]) next[id] = 'include';
+      else if (next[id] === 'include') next[id] = 'exclude';
+      else delete next[id];
+      return next;
+    });
+  };
 
   // Select every chat that matches the current filters (search + messenger +
   // tag) — handy for "send to all chats with this tag".
@@ -729,20 +765,80 @@ export function BroadcastWizard() {
               </div>
             </div>
 
-            {/* Tag filter + bulk select */}
+            {/* Language + label (include/exclude) filters + bulk select */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Language filter */}
               <select
-                value={tagFilter ?? ''}
-                onChange={(e) => setTagFilter(e.target.value || null)}
+                value={languageFilter ?? ''}
+                onChange={(e) => setLanguageFilter(e.target.value || null)}
                 className="rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-accent focus:outline-none"
               >
-                <option value="">All labels</option>
-                {tags.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
+                <option value="">All languages</option>
+                {languages.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
                   </option>
                 ))}
               </select>
+
+              {/* Labels include/exclude */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTagFilter((v) => !v)}
+                  className="flex items-center gap-1.5 rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 focus:border-accent focus:outline-none"
+                >
+                  <Tag className="h-3.5 w-3.5" />
+                  Labels
+                  {(includeTagIds.length + excludeTagIds.length) > 0 && (
+                    <span className="rounded-full bg-accent px-1.5 text-[11px] font-medium text-white">
+                      {includeTagIds.length + excludeTagIds.length}
+                    </span>
+                  )}
+                </button>
+                {showTagFilter && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowTagFilter(false)} />
+                    <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                      <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+                        <p className="text-[11px] text-slate-400">Click to cycle: include → exclude → off</p>
+                        {(includeTagIds.length + excludeTagIds.length) > 0 && (
+                          <button type="button" onClick={() => setTagStates({})} className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600">
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      {tags.length === 0 ? (
+                        <p className="px-2 py-2 text-xs text-slate-400">No labels yet</p>
+                      ) : (
+                        tags.map((t) => {
+                          const state = tagStates[t.id];
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => cycleTag(t.id)}
+                              className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-slate-50"
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
+                                <span className="truncate text-slate-700">{t.name}</span>
+                              </span>
+                              {state === 'include' && (
+                                <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">include</span>
+                              )}
+                              {state === 'exclude' && (
+                                <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">exclude</span>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
               {filteredChats.length > 0 && (
                 <button
                   type="button"
@@ -750,7 +846,7 @@ export function BroadcastWizard() {
                   className="rounded-lg border-[1.5px] border-accent/30 bg-accent/5 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
                 >
                   Select all {filteredChats.length}
-                  {(tagFilter || messengerFilter || chatSearch) ? ' filtered' : ''}
+                  {hasActiveFilters ? ' filtered' : ''}
                 </button>
               )}
               {selectedChatIds.length > 0 && (
