@@ -3,21 +3,22 @@
 import { useRouter } from 'next/navigation';
 import {
   MessageSquare,
-  Plug,
-  Send,
-  TrendingUp,
+  CheckCircle2,
+  XCircle,
   Plus,
   FileText,
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/dates';
-import { useDashboardStats } from '@/hooks/useDashboard';
+import { useDashboardStats, useOrgUserStats } from '@/hooks/useDashboard';
 import type { ActivityCategory } from '@/types/activity';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { CountUp } from '@/components/ui/CountUp';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { useAuthStore } from '@/stores/auth';
+import { isAdmin } from '@/lib/permissions';
 
 const CATEGORY_COLORS: Record<ActivityCategory, string> = {
   chats: '#3b82f6',
@@ -147,38 +148,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Metric cards */}
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      {/* Metric cards — imported chats + how many are reachable (active) vs not */}
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <MetricCard
           icon={<MessageSquare className="h-5 w-5 text-blue-500" />}
           iconBg="bg-blue-50"
-          label="Total Chats"
+          label="Imported Chats"
           value={stats?.totalChats ?? 0}
           index={0}
         />
         <MetricCard
-          icon={<Plug className="h-5 w-5 text-emerald-500" />}
+          icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
           iconBg="bg-emerald-50"
-          label="Active Integrations"
-          value={stats?.activeIntegrations ?? 0}
+          label="Active"
+          value={stats?.activeChats ?? 0}
           index={1}
         />
         <MetricCard
-          icon={<Send className="h-5 w-5 text-accent" />}
-          iconBg="bg-accent-bg"
-          label="Messages Sent"
-          value={stats?.messagesSent ?? 0}
-          subtitle="This month"
+          icon={<XCircle className="h-5 w-5 text-rose-500" />}
+          iconBg="bg-rose-50"
+          label="Inactive"
+          value={stats?.inactiveChats ?? 0}
           index={2}
         />
-        <MetricCard
-          icon={<TrendingUp className="h-5 w-5 text-purple-500" />}
-          iconBg="bg-purple-50"
-          label="Delivery Rate"
-          value={`${Math.round(stats?.deliveryRate ?? 0)}%`}
-          index={3}
-        />
       </div>
+
+      {/* Admin-only: per-user org breakdown (Item 6) */}
+      <OrgUserStatsTable />
 
       {/* Quick actions */}
       <div className="mb-8">
@@ -360,6 +356,55 @@ function MetricCard({
   );
 }
 
+
+// ─── Admin-only per-user org stats table (Item 6) ───
+
+function OrgUserStatsTable() {
+  const user = useAuthStore((s) => s.user);
+  const admin = isAdmin(user);
+  const { data, isLoading } = useOrgUserStats(admin);
+
+  if (!admin) return null;
+
+  return (
+    <div className="mb-8">
+      <h2 className="mb-3 text-sm font-semibold text-slate-700">
+        Team stats{data ? ` (${data.userCount} users)` : ''}
+      </h2>
+      <div className="overflow-x-auto rounded-xl bg-white p-2 shadow-xs">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left text-xs font-medium text-slate-400">
+              <th className="px-3 py-2">User</th>
+              <th className="px-3 py-2 text-right">Imported chats</th>
+              <th className="px-3 py-2 text-right">Broadcasts</th>
+              <th className="px-3 py-2 text-right">Chats reached</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-400">Loading…</td></tr>
+            )}
+            {!isLoading && (data?.users.length ?? 0) === 0 && (
+              <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-400">No members yet.</td></tr>
+            )}
+            {data?.users.map((u) => (
+              <tr key={u.id} className="border-b border-slate-50 last:border-0">
+                <td className="px-3 py-2.5">
+                  <div className="font-medium text-slate-800">{u.name}</div>
+                  <div className="text-xs text-slate-400">{u.email}{u.role !== 'user' ? ` · ${u.role}` : ''}</div>
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{u.importedChats}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{u.broadcasts}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{u.impactedChats}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);

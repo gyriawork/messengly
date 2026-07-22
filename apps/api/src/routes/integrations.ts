@@ -1639,7 +1639,19 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           const ownedSet = new Set(owned.map((c) => c.externalChatId));
           const offered = chats.filter((c) => !ownedSet.has(c.externalChatId));
 
+          // Item 2: whose connected account these chats come from, for the
+          // wizard badge. Best-effort — never let it break the scan.
+          let account: { name: string; handle?: string } | null = null;
+          try {
+            if (typeof adapter.getAccountIdentity === 'function') {
+              account = await adapter.getAccountIdentity();
+            }
+          } catch (e) {
+            fastify.log.warn(e, 'getAccountIdentity failed');
+          }
+
           return reply.send({
+            account,
             chats: offered.map((c) => ({ ...c, firstSeenAt: firstSeen[c.externalChatId] ?? null })),
           });
         } finally {

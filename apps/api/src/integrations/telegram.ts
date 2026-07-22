@@ -371,6 +371,17 @@ export class TelegramAdapter implements MessengerAdapter {
     };
   }
 
+  /** Item 2: whose Telegram account this is (for the import wizard badge). */
+  async getAccountIdentity(): Promise<{ name: string; handle?: string } | null> {
+    const me = await this.client!.getMe() as Api.User;
+    const name = [me.firstName, me.lastName].filter(Boolean).join(' ').trim();
+    if (!name && !me.username) return null;
+    return {
+      name: name || (me.username ? `@${me.username}` : 'Telegram account'),
+      handle: me.username ? `@${me.username}` : undefined,
+    };
+  }
+
   /**
    * Resolve a sender ID to a display name.
    */

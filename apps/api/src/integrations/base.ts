@@ -36,6 +36,13 @@ export interface MessengerAdapter {
 
   /** Get the current connection status. */
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired';
+
+  /**
+   * Human-readable identity of the connected account (e.g. the person's name /
+   * workspace), for showing "importing from X" in the wizard. Optional — an
+   * adapter that can't determine it returns null (or omits the method).
+   */
+  getAccountIdentity?(): Promise<{ name: string; handle?: string } | null>;
 }
 
 /** Typed error for messenger adapter failures. */

@@ -333,10 +333,10 @@ export function BroadcastWizard() {
       setIsUploading(true);
       try {
         for (const file of files) {
-          const result = await api.upload<{ file: { key: string; url: string; size: number; mimeType: string; originalName: string } }>('/api/uploads', file);
+          const result = await api.upload<{ file: { key: string; url: string; size: number; mimeType: string; filename: string } }>('/api/uploads', file);
           setBroadcastAttachments((prev) => [...prev, {
             url: result.file.url,
-            filename: result.file.originalName,
+            filename: result.file.filename,
             mimeType: result.file.mimeType,
             size: result.file.size,
           }]);
@@ -606,6 +606,14 @@ export function BroadcastWizard() {
                       key={i}
                       className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700"
                     >
+                      {att.mimeType?.startsWith('image/') && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={att.url.startsWith('http') ? att.url : `${process.env.NEXT_PUBLIC_API_URL || ''}${att.url}`}
+                          alt={att.filename}
+                          className="h-8 w-8 rounded object-cover"
+                        />
+                      )}
                       <span className="max-w-[160px] truncate">{att.filename}</span>
                       <span className="text-slate-400">
                         {att.size < 1024 * 1024

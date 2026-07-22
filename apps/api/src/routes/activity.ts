@@ -50,9 +50,27 @@ export default async function activityRoutes(fastify: FastifyInstance): Promise<
 
       const where: Record<string, unknown> = { organizationId };
 
-      // User role: only see own activity; Admin with scope=my: also only own
-      if (request.user.role === 'user' || scope === 'my') {
+      // Visibility rules:
+      // - scope=my (anyone): only the caller's own activity.
+      // - role 'user': only activity performed by OTHER regular users (+ own);
+      //   never admin/superadmin actions, and not system events. The actor's
+      //   role isn't stored on the log, so we resolve the org's regular-user
+      //   ids and restrict to them (users are soft-deleted, so roles stay
+      //   queryable). An explicit actor filter is honored only for a peer.
+      // - admin/superadmin: whole org, optionally narrowed to one actor.
+      if (scope === 'my') {
         where.userId = request.user.id;
+      } else if (request.user.role === 'user') {
+        const peers = await prisma.user.findMany({
+          where: { organizationId, role: 'user' },
+          select: { id: true },
+        });
+        const peerIds = peers.map((u) => u.id);
+        if (userId && peerIds.includes(userId)) {
+          where.userId = userId;
+        } else {
+          where.userId = { in: peerIds };
+        }
       } else if (userId) {
         where.userId = userId;
       }

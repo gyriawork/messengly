@@ -364,4 +364,67 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
       });
     },
   );
+
+  // ─── GET /api/organizations/user-stats ───
+  // Admin dashboard: per-user breakdown for the caller's org (superadmin: the
+  // sidebar-selected org via getOrgId). Metrics: chats each user imported
+  // (Chat.importedById), broadcasts they created (Broadcast.createdById), and
+  // how many distinct chats those broadcasts reached.
+
+  fastify.get(
+    '/user-stats',
+    { preHandler: [authenticate, requireRole('admin', 'superadmin'), requireOrganization()] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const users = await prisma.user.findMany({
+        where: { organizationId, deletedAt: null, role: { not: 'superadmin' } },
+        select: { id: true, name: true, email: true, role: true },
+        orderBy: { name: 'asc' },
+      });
+
+      const [importedGroups, broadcastGroups, impactRows] = await Promise.all([
+        prisma.chat.groupBy({
+          by: ['importedById'],
+          where: { organizationId, deletedAt: null },
+          _count: { _all: true },
+        }),
+        prisma.broadcast.groupBy({
+          by: ['createdById'],
+          where: { organizationId, deletedAt: null },
+          _count: { _all: true },
+        }),
+        // groupBy can't traverse BroadcastChat -> Broadcast.createdById, so a
+        // raw query attributes each broadcast's reached chats to its creator.
+        prisma.$queryRaw<Array<{ userId: string; impactedChats: number; totalSends: number }>>`
+          SELECT b."createdById" AS "userId",
+                 COUNT(DISTINCT bc."chatId")::int AS "impactedChats",
+                 COUNT(*)::int AS "totalSends"
+          FROM "BroadcastChat" bc
+          JOIN "Broadcast" b ON b."id" = bc."broadcastId"
+          WHERE b."organizationId" = ${organizationId} AND b."deletedAt" IS NULL
+          GROUP BY b."createdById"
+        `,
+      ]);
+
+      const importedByUser = new Map(importedGroups.map((g) => [g.importedById, g._count._all]));
+      const broadcastsByUser = new Map(broadcastGroups.map((g) => [g.createdById, g._count._all]));
+      const impactByUser = new Map(impactRows.map((r) => [r.userId, r]));
+
+      const rows = users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        importedChats: importedByUser.get(u.id) ?? 0,
+        broadcasts: broadcastsByUser.get(u.id) ?? 0,
+        impactedChats: Number(impactByUser.get(u.id)?.impactedChats ?? 0),
+      }));
+
+      return reply.send({ userCount: users.length, users: rows });
+    },
+  );
 }

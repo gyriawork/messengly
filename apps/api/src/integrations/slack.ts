@@ -399,6 +399,27 @@ export class SlackAdapter implements MessengerAdapter {
     return this.status;
   }
 
+  /** Item 2: whose Slack account/workspace this is (for the import wizard badge). */
+  async getAccountIdentity(): Promise<{ name: string; handle?: string } | null> {
+    try {
+      const auth = await this.client!.auth.test();
+      const team = (auth.team as string | undefined) ?? undefined;
+      const userId = auth.user_id as string | undefined;
+      let name = (auth.user as string | undefined) ?? '';
+      if (userId) {
+        try {
+          const usersClient = this.botToken ? new WebClient(this.botToken) : this.client!;
+          const info = await usersClient.users.info({ user: userId });
+          name = info.user?.real_name || info.user?.profile?.display_name || info.user?.name || name;
+        } catch { /* keep the auth.test username */ }
+      }
+      if (!name && !team) return null;
+      return { name: name || team || 'Slack account', handle: team };
+    } catch {
+      return null;
+    }
+  }
+
   private ensureConnected(): void {
     if (this.status !== 'connected' || !this.client) {
       throw new MessengerError('slack', null, 'Slack adapter is not connected');

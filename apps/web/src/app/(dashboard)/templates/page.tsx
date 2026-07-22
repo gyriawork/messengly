@@ -247,13 +247,13 @@ function TemplateEditor({
     setIsUploading(true);
     try {
       for (const file of files) {
-        const result = await api.upload<{ file: { url: string; size: number; mimeType: string; originalName: string } }>(
+        const result = await api.upload<{ file: { url: string; size: number; mimeType: string; filename: string } }>(
           '/api/uploads',
           file,
         );
         setAttachments((prev) => [
           ...prev,
-          { url: result.file.url, filename: result.file.originalName, mimeType: result.file.mimeType, size: result.file.size },
+          { url: result.file.url, filename: result.file.filename, mimeType: result.file.mimeType, size: result.file.size },
         ]);
       }
     } catch {

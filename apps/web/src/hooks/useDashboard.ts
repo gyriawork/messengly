@@ -8,6 +8,8 @@ import type { ActivityEntry } from '@/types/activity';
 interface ChatsResponse {
   chats: Array<{ id: string; messenger?: string; name: string }>;
   total: number;
+  /** Visibility-scoped active/inactive/read-only breakdown (server-computed). */
+  statusCounts?: Record<string, number>;
 }
 
 interface BroadcastsResponse {
@@ -76,6 +78,8 @@ export function useDashboardStats(scope?: 'org' | 'my') {
 
       return {
         totalChats: chats.total,
+        activeChats: chats.statusCounts?.['active'] ?? 0,
+        inactiveChats: chats.statusCounts?.['inactive'] ?? 0,
         totalBroadcasts: broadcasts.total,
         activeIntegrations: activeIntegrations.length,
         messagesSent: analytics?.totalSent ?? 0,
@@ -90,6 +94,35 @@ export function useDashboardStats(scope?: 'org' | 'my') {
         },
       };
     },
+    staleTime: 30_000,
+  });
+}
+
+// ─── Admin: per-user org stats (Item 6) ───
+
+export interface OrgUserStatRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  importedChats: number;
+  broadcasts: number;
+  impactedChats: number;
+}
+
+interface OrgUserStatsResponse {
+  userCount: number;
+  users: OrgUserStatRow[];
+}
+
+/** Admin-only: how many chats each member imported, broadcasts they sent, and
+ *  how many distinct chats those broadcasts reached. `enabled` gates the fetch
+ *  so it only runs for admins/superadmins. */
+export function useOrgUserStats(enabled: boolean) {
+  return useQuery({
+    queryKey: ['org-user-stats'],
+    queryFn: () => api.get<OrgUserStatsResponse>('/api/organizations/user-stats'),
+    enabled,
     staleTime: 30_000,
   });
 }

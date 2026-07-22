@@ -239,6 +239,8 @@ export function ConnectAndImportWizard({
     isAlreadyConnected ? 'loading-chats' : 'credentials',
   );
   const [chats, setChats] = useState<ExternalChat[]>([]);
+  // Which connected account these chats belong to (Item 2) — shown as a badge.
+  const [account, setAccount] = useState<{ name: string; handle?: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<ImportProgress>({ done: 0, total: 0, currentName: '' });
   const [importResult, setImportResult] = useState<{ imported: number; failed: number } | null>(null);
@@ -268,11 +270,12 @@ export function ConnectAndImportWizard({
     setStep('loading-chats');
     setError(null);
     try {
-      const data = await api.post<{ chats: ExternalChat[] }>(
+      const data = await api.post<{ chats: ExternalChat[]; account?: { name: string; handle?: string } | null }>(
         `/api/integrations/${messenger}/list-chats`,
         {},
       );
       setChats(data.chats);
+      setAccount(data.account ?? null);
       // Start with NOTHING selected — the user picks exactly which chats to
       // import. Pre-selecting all made a user who wanted one chat accidentally
       // import the whole workspace (they saw an all-checked list).
@@ -469,6 +472,19 @@ export function ConnectAndImportWizard({
         {/* ── Step: Selecting ── */}
         {step === 'selecting' && (
           <>
+            {account && (
+              <div className="mb-3 flex shrink-0 items-center gap-2 rounded-lg bg-accent-bg px-3 py-2 text-xs text-slate-600">
+                <MessengerIcon messenger={messenger} size={18} />
+                <span>
+                  Importing from{' '}
+                  <span className="font-semibold text-slate-800">{account.name}</span>
+                  {account.handle && account.handle !== account.name && (
+                    <span className="text-slate-400"> ({account.handle})</span>
+                  )}
+                  {"'s "}{messengerName}
+                </span>
+              </div>
+            )}
             <ChatSelector
               chats={chats}
               selected={selected}

@@ -336,6 +336,21 @@ export class WhatsAppAdapter implements MessengerAdapter {
     return this.status;
   }
 
+  /** Item 2: which WhatsApp account this is (for the import wizard badge). */
+  async getAccountIdentity(): Promise<{ name: string; handle?: string } | null> {
+    try {
+      const info = await this.client.getSession(this.sessionName) as { me?: { pushName?: string; id?: string } };
+      const pushName = info.me?.pushName;
+      const phone = this.credentials.phoneNumber;
+      const name = pushName || phone;
+      if (!name) return null;
+      return { name, handle: phone && pushName ? phone : undefined };
+    } catch {
+      const phone = this.credentials.phoneNumber;
+      return phone ? { name: phone } : null;
+    }
+  }
+
   private ensureConnected(): void {
     if (this.status !== 'connected') {
       throw new MessengerError('whatsapp', null, 'WhatsApp adapter is not connected');

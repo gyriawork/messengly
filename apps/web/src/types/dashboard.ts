@@ -2,6 +2,8 @@ import type { ActivityEntry } from './activity';
 
 export interface DashboardStats {
   totalChats: number;
+  activeChats: number;
+  inactiveChats: number;
   totalBroadcasts: number;
   activeIntegrations: number;
   messagesSent: number;
