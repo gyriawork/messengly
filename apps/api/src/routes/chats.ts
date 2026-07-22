@@ -1264,6 +1264,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+      // Per-tag chat counts on the Labels page changed too.
+      await cacheInvalidate(cacheKey(organizationId, 'tags', '*'));
 
       return reply.send({ updated: validChatIds.length });
     },

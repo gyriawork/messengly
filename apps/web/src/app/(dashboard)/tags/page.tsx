@@ -231,39 +231,43 @@ function TagCard({
   canManage: boolean;
 }) {
   return (
-    <div className="group flex items-center justify-between rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="group flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-white px-3 py-1.5 shadow-xs transition-shadow hover:shadow-sm">
+      <div className="flex min-w-0 items-center gap-2">
         <span
-          className="h-3 w-3 shrink-0 rounded-full"
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: tag.color }}
         />
         <span
-          className="text-sm font-semibold"
+          className="truncate text-sm font-medium"
           style={{ color: tag.color }}
+          title={tag.name}
         >
           {tag.name}
         </span>
-        <span className="shrink-0 text-xs text-slate-500">
-          {tag.chatCount ?? 0} chat{(tag.chatCount ?? 0) !== 1 ? 's' : ''}
+        <span
+          className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[11px] font-medium tabular-nums text-slate-500"
+          title={`${tag.chatCount ?? 0} chat${(tag.chatCount ?? 0) !== 1 ? 's' : ''}`}
+        >
+          {tag.chatCount ?? 0}
         </span>
       </div>
       {canManage && (
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           <button
             onClick={onEdit}
             aria-label="Edit tag"
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
             title="Edit tag"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onDelete}
             aria-label="Delete tag"
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
             title="Delete tag"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -318,12 +322,12 @@ export default function TagsPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-xl bg-white p-5 shadow-xs">
-              <Skeleton className="h-3 w-3 rounded-full" />
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-3 w-16" />
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-1.5 shadow-xs">
+              <Skeleton className="h-2.5 w-2.5 rounded-full" />
+              <Skeleton className="h-3.5 w-28" />
+              <Skeleton className="h-3 w-6" />
             </div>
           ))}
         </div>
@@ -345,9 +349,9 @@ export default function TagsPage() {
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {tags.map((tag, i) => (
-            <div key={tag.id} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
+            <div key={tag.id} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}>
             <TagCard
               tag={tag}
               onEdit={() => setEditingTag(tag)}

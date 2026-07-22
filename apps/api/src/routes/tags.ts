@@ -56,7 +56,12 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const ck = cacheKey(organizationId, 'tags');
+      // chatCount is scoped to what the caller can SEE, so the cache key is
+      // per-viewer: an admin/superadmin sees org-wide counts (owned chats
+      // only, matching the chats list), a regular user sees only their own
+      // chats' counts.
+      const canViewAll = request.user.role === 'admin' || request.user.role === 'superadmin';
+      const ck = cacheKey(organizationId, 'tags', canViewAll ? 'all' : `u:${request.user.id}`);
       const cached = await cacheGet(ck);
       if (cached) {
         return reply.send(cached);
@@ -64,24 +69,42 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
       const tags = await prisma.tag.findMany({
         where: { organizationId },
-        include: {
-          _count: {
-            select: { chats: true },
-          },
-        },
         orderBy: { name: 'asc' },
       });
+
+      // Per-tag count of chats the caller can see. Admin: chats that still
+      // have an owner (orphans excluded, like the chats list). User: chats
+      // they personally own.
+      const countRows = canViewAll
+        ? await prisma.$queryRaw<Array<{ tagId: string; count: number }>>`
+            SELECT ct."tagId" AS "tagId", COUNT(DISTINCT c.id)::int AS count
+            FROM "ChatTag" ct
+            JOIN "Chat" c ON c.id = ct."chatId"
+            WHERE c."organizationId" = ${organizationId} AND c."deletedAt" IS NULL
+              AND EXISTS (SELECT 1 FROM "ChatOwner" co WHERE co."chatId" = c.id)
+            GROUP BY ct."tagId"`
+        : await prisma.$queryRaw<Array<{ tagId: string; count: number }>>`
+            SELECT ct."tagId" AS "tagId", COUNT(DISTINCT c.id)::int AS count
+            FROM "ChatTag" ct
+            JOIN "Chat" c ON c.id = ct."chatId"
+            JOIN "ChatOwner" co ON co."chatId" = c.id AND co."userId" = ${request.user.id}
+            WHERE c."organizationId" = ${organizationId} AND c."deletedAt" IS NULL
+            GROUP BY ct."tagId"`;
+      const countMap = new Map(countRows.map((r) => [r.tagId, Number(r.count)]));
 
       const result = tags.map((tag) => ({
         id: tag.id,
         name: tag.name,
         color: tag.color,
         organizationId: tag.organizationId,
-        chatCount: tag._count.chats,
+        chatCount: countMap.get(tag.id) ?? 0,
       }));
 
       const response = { tags: result };
-      await cacheSet(ck, response, 300);
+      // Short TTL: counts also shift when chats gain/lose owners (import,
+      // "remove from my list", disconnect) — bounding staleness to 30s keeps
+      // the count fresh without invalidating from every one of those paths.
+      await cacheSet(ck, response, 30);
 
       return reply.send(response);
     },
@@ -123,7 +146,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         },
       });
 
-      await cacheInvalidate(cacheKey(organizationId, 'tags'));
+      await cacheInvalidate(cacheKey(organizationId, 'tags', '*'));
 
       return reply.status(201).send({
         id: tag.id,
@@ -192,7 +215,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         data: updateData,
       });
 
-      await cacheInvalidate(cacheKey(organizationId, 'tags'));
+      await cacheInvalidate(cacheKey(organizationId, 'tags', '*'));
 
       return reply.send({
         id: updated.id,
@@ -230,7 +253,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
       // ChatTag entries cascade-delete via Prisma schema (onDelete: Cascade)
       await prisma.tag.delete({ where: { id } });
 
-      await cacheInvalidate(cacheKey(organizationId, 'tags'));
+      await cacheInvalidate(cacheKey(organizationId, 'tags', '*'));
 
       return reply.status(204).send();
     },
