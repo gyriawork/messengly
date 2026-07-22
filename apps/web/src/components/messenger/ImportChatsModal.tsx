@@ -8,6 +8,7 @@ import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { ConnectAndImportWizard } from '@/components/settings/ConnectAndImportWizard';
 import { useAuthStore } from '@/stores/auth';
 import { can, isAdmin } from '@/lib/permissions';
+import { isActiveMessenger } from '@/lib/messengers';
 import type { MessengerType } from '@/types/chat';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +39,7 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
       (integrationsData?.integrations ?? [])
         .filter((i) =>
           i.status === 'connected' &&
+          isActiveMessenger(i.messenger) &&
           (admin || (i.scope === 'user' && i.userId === user?.id)),
         )
         .map((i) => i.messenger as MessengerType),

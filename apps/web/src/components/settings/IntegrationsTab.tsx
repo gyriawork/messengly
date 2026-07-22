@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isActiveMessenger } from '@/lib/messengers';
 import { humanizeError } from '@/lib/errors';
 import { formatDateTime } from '@/lib/dates';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
@@ -80,15 +81,6 @@ export const messengers: MessengerInfo[] = [
     badgeBg: 'bg-messenger-sl-bg',
   },
   {
-    key: 'whatsapp',
-    name: 'WhatsApp',
-    abbr: 'WA',
-    description: 'Message contacts via WhatsApp Web pairing',
-    bgClass: 'bg-messenger-wa-bg',
-    textClass: 'text-messenger-wa-text',
-    badgeBg: 'bg-messenger-wa-bg',
-  },
-  {
     key: 'teams',
     name: 'MS Teams',
     abbr: 'MT',
@@ -97,7 +89,8 @@ export const messengers: MessengerInfo[] = [
     textClass: 'text-messenger-mt-text',
     badgeBg: 'bg-messenger-mt-bg',
   },
-  // Gmail intentionally hidden — service is focused on Slack/Telegram broadcasts.
+  // Gmail and WhatsApp intentionally hidden for launch — not yet integrated.
+  // (See apps/web/src/lib/messengers.ts. Backend code stays in place.)
 ];
 
 // ---------- Status helpers ----------
@@ -1267,8 +1260,8 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
   const { data: availableData } = useAvailableIntegrations();
   const { data: orgConfigData } = useOrgMessengerConfig();
   const me = useAuthStore((s) => s.user);
-  // Gmail is intentionally hidden from settings/connections (Task 2).
-  const visibleOrgConfig = orgConfigData?.filter((entry) => entry.messenger !== 'gmail') ?? [];
+  // Gmail + WhatsApp are hidden from settings/connections for launch.
+  const visibleOrgConfig = orgConfigData?.filter((entry) => isActiveMessenger(entry.messenger)) ?? [];
   const connectMutation = useConnectIntegration();
   const [connectingMessenger, setConnectingMessenger] =
     useState<MessengerInfo | null>(null);

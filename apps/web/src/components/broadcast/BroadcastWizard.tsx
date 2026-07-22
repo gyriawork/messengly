@@ -36,6 +36,7 @@ import {
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import { useTags } from '@/hooks/useTags';
 import { useLanguages } from '@/hooks/useChats';
+import { ACTIVE_MESSENGERS, isActiveMessenger } from '@/lib/messengers';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { useTeamUsers } from '@/hooks/useUsers';
 import { useAuthStore } from '@/stores/auth';
@@ -134,8 +135,11 @@ export function BroadcastWizard() {
   const templates = templatesData?.templates || [];
 
   // Inactive chats were marked unreachable by "Update chats" — a broadcast to
-  // them is guaranteed to fail, so they are not offered as recipients.
-  const allChats = loadedChats.filter((c) => c.status !== 'inactive');
+  // them is guaranteed to fail, so they are not offered as recipients. Hidden
+  // channels (WhatsApp/Gmail, not integrated for launch) are excluded too.
+  const allChats = loadedChats.filter(
+    (c) => c.status !== 'inactive' && isActiveMessenger(c.messenger),
+  );
 
   const form = useForm<BroadcastFormData>({
     resolver: zodResolver(broadcastSchema),
@@ -741,7 +745,7 @@ export function BroadcastWizard() {
                 />
               </div>
               <div className="flex gap-1">
-                {(['telegram', 'slack', 'whatsapp', 'teams'] as const).map(
+                {ACTIVE_MESSENGERS.map(
                   (m) => {
                     const meta = messengerMeta[m];
                     return (

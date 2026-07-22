@@ -12,6 +12,7 @@ import { NewChatsBanner, usePendingImports } from '@/components/chats/NewChatsBa
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { useAuthStore } from '@/stores/auth';
 import { can, isAdmin } from '@/lib/permissions';
+import { isActiveMessenger } from '@/lib/messengers';
 import type { MessengerType } from '@/types/chat';
 
 const MESSENGER_LABELS: Record<MessengerType, string> = {
@@ -45,7 +46,7 @@ export default function ImportPage() {
         )
         .map((i) => i.messenger as MessengerType),
     ),
-  ].filter((m) => m !== 'gmail'); // Gmail hidden — broadcast-focused service
+  ].filter(isActiveMessenger); // Gmail + WhatsApp hidden for launch
 
   return (
     <RequireOrgContext>

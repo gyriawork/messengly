@@ -25,7 +25,7 @@ import {
 const messengerTabs = [
   { key: 'telegram', label: 'Telegram', bgClass: 'bg-messenger-tg-bg', textClass: 'text-messenger-tg-text' },
   { key: 'slack', label: 'Slack', bgClass: 'bg-messenger-sl-bg', textClass: 'text-messenger-sl-text' },
-  { key: 'whatsapp', label: 'WhatsApp', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text' },
+  // WhatsApp + Gmail hidden for launch (see apps/web/src/lib/messengers.ts).
   { key: 'teams', label: 'MS Teams', bgClass: 'bg-messenger-mt-bg', textClass: 'text-messenger-mt-text' },
 ] as const;
 

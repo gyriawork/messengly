@@ -40,6 +40,7 @@ import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 import { useAuthStore } from '@/stores/auth';
 import { isAdmin } from '@/lib/permissions';
+import { isActiveMessenger } from '@/lib/messengers';
 import { useTeamUsers } from '@/hooks/useUsers';
 import { NewChatsBanner } from '@/components/chats/NewChatsBanner';
 
@@ -1056,7 +1057,7 @@ export default function ChatsPage() {
         >
           <option value="">All Messengers</option>
           {(Object.keys(messengerConfig) as MessengerType[])
-            .filter((m) => m !== 'gmail') // Gmail hidden — broadcast-focused service
+            .filter(isActiveMessenger) // Gmail + WhatsApp hidden for launch
             .map((m) => (
               <option key={m} value={m}>{messengerConfig[m].label}</option>
             ))}

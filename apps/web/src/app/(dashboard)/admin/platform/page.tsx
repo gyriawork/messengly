@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 import { usePlatformConfig } from '@/hooks/usePlatformConfig';
 import { PlatformConfigCard } from '@/components/admin/PlatformConfigCard';
+import { isActiveMessenger } from '@/lib/messengers';
 
 export default function PlatformSettingsPage() {
   const user = useAuthStore((s) => s.user);
@@ -49,7 +50,7 @@ export default function PlatformSettingsPage() {
       ) : (
         <div className="space-y-3">
           {(entries ?? [])
-            .filter((entry) => entry.messenger !== 'gmail') // Gmail hidden — broadcast-focused service
+            .filter((entry) => isActiveMessenger(entry.messenger)) // Gmail + WhatsApp hidden for launch
             .map((entry, i) => (
               <div key={entry.messenger} className="motion-safe:animate-fade-in-up" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
                 <PlatformConfigCard entry={entry} />

@@ -42,11 +42,10 @@ const CATEGORY_BG: Record<ActivityCategory, string> = {
   organizations: 'bg-cyan-50 text-cyan-700',
 };
 
-// Gmail intentionally omitted — service is focused on Slack/Telegram broadcasts.
+// Gmail + WhatsApp intentionally omitted — hidden for launch.
 const MESSENGER_CONFIG = {
   telegram: { label: 'Telegram', short: 'TG', color: 'bg-[#2AABEE]' },
   slack: { label: 'Slack', short: 'SL', color: 'bg-[#E01E5A]' },
-  whatsapp: { label: 'WhatsApp', short: 'WA', color: 'bg-[#25D366]' },
   teams: { label: 'MS Teams', short: 'TS', color: 'bg-[#6264A7]' },
 } as const;
 
