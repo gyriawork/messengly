@@ -541,7 +541,7 @@ export function ConnectAndImportWizard({
                 </p>
               )}
               <p className="mt-1 text-xs text-slate-500">
-                Your chats are in, history and all.
+                Your chats are in — recent messages loaded, older history fills in over time.
               </p>
             </div>
             <div className="flex gap-2">

@@ -370,6 +370,19 @@ export function BroadcastWizard() {
       const files = Array.from(e.target.files ?? []);
       if (files.length === 0) return;
       e.target.value = '';
+      // Each attachment is re-downloaded from R2 for every recipient, so a big
+      // file × thousands of chats is a lot of egress — cap count and size (p33).
+      const MAX_ATTACHMENTS = 5;
+      const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+      const oversize = files.find((f) => f.size > MAX_FILE_BYTES);
+      if (oversize) {
+        toast.error(`"${oversize.name}" is over 10 MB — please attach a smaller file.`);
+        return;
+      }
+      if (broadcastAttachments.length + files.length > MAX_ATTACHMENTS) {
+        toast.error(`You can attach up to ${MAX_ATTACHMENTS} files per broadcast.`);
+        return;
+      }
       setIsUploading(true);
       try {
         for (const file of files) {
@@ -387,7 +400,7 @@ export function BroadcastWizard() {
         setIsUploading(false);
       }
     },
-    [],
+    [broadcastAttachments.length],
   );
 
   async function onSaveDraft(data: BroadcastFormData) {
