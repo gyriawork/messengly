@@ -191,10 +191,15 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       if ('error' in target) {
         return reply.redirect(`${getAppUrl()}/settings?integration=slack&status=error&error=forbidden`);
       }
+      // 'bot' sends as the Messengly app; 'user' sends as the connecting
+      // Slack account (requires a valid xoxp- user token — checked in the
+      // callback once the token exchange comes back).
+      const mode: 'bot' | 'user' = query.mode === 'user' ? 'user' : 'bot';
       const stateData = JSON.stringify({
         userId: target.userId,
         organizationId,
         scope: target.scope,
+        mode,
       });
       await getRedis().set(`oauth:slack:state:${state}`, stateData, 'EX', 600);
 
@@ -280,7 +285,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Delete state token immediately (one-time use)
       await getRedis().del(redisKey);
 
-      let stateData: { userId: string; organizationId: string; scope?: 'org' | 'user' };
+      let stateData: { userId: string; organizationId: string; scope?: 'org' | 'user'; mode?: 'bot' | 'user' };
       try {
         stateData = JSON.parse(stateDataRaw);
       } catch {
@@ -289,7 +294,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      const { userId, organizationId, scope = 'org' } = stateData;
+      const { userId, organizationId, scope = 'org', mode = 'bot' } = stateData;
 
       // Resolve platform credentials for token exchange
       const slackCreds = await getSlackPlatformCreds(organizationId);
@@ -340,11 +345,24 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       const botToken = tokenData.access_token;
       const userToken = tokenData.authed_user?.access_token;
 
+      // Personal mode requires an actual xoxp- user token — Slack can grant
+      // bot-only access even when user_scope was requested (e.g. an org
+      // policy blocking user tokens), so this must be checked explicitly
+      // rather than silently falling back to sending as the bot.
+      if (mode === 'user' && !userToken) {
+        return reply.redirect(
+          `${appUrl}/settings?integration=slack&status=error&error=no_user_token`,
+        );
+      }
+
       // Prefer user token for sending messages AS the user; fall back to bot token
       const primaryToken = userToken || botToken;
 
-      // Verify the token works by connecting with the adapter
-      const credentials = { token: primaryToken };
+      // Verify the exact token this mode will actually use — verifying
+      // `userToken || botToken` could pass on a broken personal token by
+      // silently falling through to a working bot token.
+      const tokenToVerify = mode === 'user' ? (userToken as string) : botToken;
+      const credentials = { token: tokenToVerify };
       const adapter = await createAdapter('slack', credentials, { organizationId });
       try {
         await adapter.connect();
@@ -365,6 +383,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         team: tokenData.team,
         authedUser: tokenData.authed_user,
         oauthFlow: true, // Mark that this was connected via OAuth
+        sendAs: mode,
       });
 
       // Upsert the integration record
@@ -381,12 +400,14 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       let slackIntegrationId: string;
       if (existing) {
+        const existingSettings = (existing.settings as Record<string, unknown> | null) ?? {};
         await prisma.integration.update({
           where: { id: existing.id },
           data: {
             credentials: encryptedCredentials,
             status: 'connected',
             connectedAt: new Date(),
+            settings: { ...existingSettings, sendAs: mode },
           },
         });
         slackIntegrationId = existing.id;
@@ -400,6 +421,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             userId,
             scope,
             connectedAt: new Date(),
+            settings: { sendAs: mode },
           },
         });
         slackIntegrationId = createdSlack.id;

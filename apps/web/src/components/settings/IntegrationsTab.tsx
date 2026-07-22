@@ -421,10 +421,10 @@ function SlackConnectForm({
 
   const oauthConfigured = oauthStatus?.oauthConfigured ?? false;
 
-  const handleOAuthConnect = async () => {
+  const handleOAuthConnect = async (mode: 'bot' | 'user') => {
     const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    let url = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
+    let url = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}&mode=${mode}`;
     const orgId = useSuperadminStore.getState().selectedOrgId;
     if (orgId) {
       url += `&organizationId=${encodeURIComponent(orgId)}`;
@@ -451,17 +451,25 @@ function SlackConnectForm({
           <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
             <p className="text-xs text-blue-700">
-              Click the button below to authorize with Slack. You will be redirected to
+              Choose how messages should be sent. You will be redirected to
               Slack to grant access, then returned here automatically.
             </p>
           </div>
           <button
             type="button"
-            onClick={handleOAuthConnect}
+            onClick={() => handleOAuthConnect('bot')}
             className="flex w-full items-center justify-center gap-2 rounded bg-[#4A154B] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3a1139] hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
           >
             <ExternalLink className="h-4 w-4" />
-            Connect with Slack
+            Connect as bot — messages send from the app
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOAuthConnect('user')}
+            className="flex w-full items-center justify-center gap-2 rounded border-[1.5px] border-[#4A154B] px-4 py-2.5 text-sm font-medium text-[#4A154B] transition-all hover:bg-[#4A154B]/5 hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98]"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Connect as my Slack account — messages send as me
           </button>
 
           {/* Expandable manual token section */}
@@ -982,6 +990,11 @@ function IntegrationCard({
               <span className={cn('h-1.5 w-1.5 rounded-full', config.dotClass)} />
               {config.label}
             </span>
+            {info.key === 'slack' && isConnected && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                {(integration?.settings as { sendAs?: 'bot' | 'user' } | undefined)?.sendAs === 'user' ? 'personal' : 'bot'}
+              </span>
+            )}
           </div>
           <p className="mt-0.5 truncate text-xs text-slate-500">{info.description}</p>
           {integration && status !== 'disconnected' && (

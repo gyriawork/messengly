@@ -24,6 +24,12 @@ export function slackNameToEmoji(name: string): string {
 interface SlackCredentials {
   token: string;
   botToken?: string;
+  /** Personal (xoxp-) token from the OAuth callback; may be absent (manual
+   * token connect, or an OAuth grant that didn't include a user token). */
+  userToken?: string;
+  /** Task 4: dual send mode. 'user' = post as the connecting person; default
+   * ('bot' or omitted) = today's behavior, post as the app/bot. */
+  sendAs?: 'bot' | 'user';
 }
 
 export class SlackAdapter implements MessengerAdapter {
@@ -31,17 +37,36 @@ export class SlackAdapter implements MessengerAdapter {
   private status: 'connected' | 'disconnected' | 'token_expired' | 'session_expired' = 'disconnected';
   private token: string;
   private botToken?: string;
+  private sendAsUser: boolean;
 
   constructor(credentials: SlackCredentials) {
-    // Prefer the bot token (xoxb-) as the primary client so messages post AS the
-    // app/bot. OAuth connections also store a user token (xoxp-); using that would
-    // post under the authorizing user's name. The bot token also scopes listing
-    // and sending to conversations the bot can actually reach.
     this.botToken = credentials.botToken;
-    this.token = credentials.botToken || credentials.token;
+    this.sendAsUser = credentials.sendAs === 'user';
+    if (this.sendAsUser) {
+      // Personal-account sending MUST use the real xoxp user token. Never
+      // fall back to token/botToken here — a manual connection stores only
+      // {token} (which may itself be an xoxb bot token), and some OAuth
+      // grants never got a user token at all. Falling back would silently
+      // send under the wrong identity, which is worse than failing.
+      this.token = credentials.userToken ?? '';
+    } else {
+      // Prefer the bot token (xoxb-) as the primary client so messages post AS the
+      // app/bot. OAuth connections also store a user token (xoxp-); using that would
+      // post under the authorizing user's name. The bot token also scopes listing
+      // and sending to conversations the bot can actually reach.
+      this.token = credentials.botToken || credentials.token;
+    }
   }
 
   async connect(_credentials?: Record<string, unknown>): Promise<void> {
+    if (this.sendAsUser && !this.token.startsWith('xoxp-')) {
+      this.status = 'disconnected';
+      throw new MessengerError(
+        'slack',
+        null,
+        'This Slack connection has no personal account token — reconnect your Slack account to send as yourself.',
+      );
+    }
     try {
       this.client = new WebClient(this.token);
 

@@ -63,6 +63,7 @@ const oauthErrorMessages: Record<string, string> = {
   token_verification_failed: 'Token could not be verified. Please try again.',
   access_denied: 'You denied the authorization request.',
   no_refresh_token: 'Google did not return a refresh token. Please revoke app access at myaccount.google.com/permissions and try again.',
+  no_user_token: 'Slack did not grant a personal token. Try again and approve access for your own account.',
 };
 
 export default function SettingsPage() {
