@@ -241,13 +241,8 @@ export default function TeamMemberPage() {
                   onChange={(v) => setPermission('canSelfConnectMessengers', v)}
                   disabled={updateMutation.isPending}
                 />
-                <PermissionToggle
-                  label="Can view all chats"
-                  description="See every chat in the organization and filter by owner, instead of only their own."
-                  checked={member.permissions.canViewAllChats}
-                  onChange={(v) => setPermission('canViewAllChats', v)}
-                  disabled={updateMutation.isPending}
-                />
+                {/* "View all chats" was removed: regular users always see only
+                    the chats they imported; only admins see the whole org. */}
               </div>
             </div>
 

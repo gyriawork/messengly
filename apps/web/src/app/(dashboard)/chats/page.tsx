@@ -20,12 +20,13 @@ import {
   ArrowUpDown,
   Download,
   RefreshCw,
+  ListX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/dates';
 import { downloadXls } from '@/lib/xls';
-import { useChats, useAllChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
+import { useChats, useAllChats, useBulkDeleteChats, useBulkUnlinkChats, useBulkAssignChats, useBulkTagChats, useRefreshChatStatuses } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -37,7 +38,7 @@ import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 import { useAuthStore } from '@/stores/auth';
-import { can, isAdmin } from '@/lib/permissions';
+import { isAdmin } from '@/lib/permissions';
 import { useTeamUsers } from '@/hooks/useUsers';
 import { NewChatsBanner } from '@/components/chats/NewChatsBanner';
 
@@ -66,6 +67,18 @@ const chatTypeIcons: Record<string, typeof MessageSquare> = {
   channel: Hash,
 };
 
+// The "Owner" a user sees: a manually-assigned label wins (explicit human
+// override), otherwise the people whose connected accounts actually reach the
+// chat (ChatOwner links — every importer is one), otherwise the single
+// first-importer owner. Returns '' when there is nothing to show.
+function ownerLabel(chat: Chat): string {
+  if (chat.ownerName) return chat.ownerName;
+  const names = (chat.owners ?? []).map((o) => o.name).filter(Boolean);
+  if (names.length === 1) return names[0];
+  if (names.length > 1) return `${names[0]} +${names.length - 1}`;
+  return chat.owner?.name ?? '';
+}
+
 // ─── Export chats to an Excel-openable .xls file (no external dependency) ───
 
 function exportChatsToXls(chats: Chat[]) {
@@ -73,7 +86,7 @@ function exportChatsToXls(chats: Chat[]) {
     c.name,
     messengerConfig[c.messenger]?.label ?? c.messenger,
     c.chatType,
-    c.ownerName ?? '',
+    ownerLabel(c),
     (c.tags ?? []).map((t) => t.name).join(', '),
     formatDate(c.createdAt),
   ]);
@@ -268,6 +281,7 @@ function BulkActions({
   const [showTagMenu, setShowTagMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteMutation = useBulkDeleteChats();
+  const unlinkMutation = useBulkUnlinkChats();
 
   const handleDelete = () => {
     deleteMutation.mutate(selectedIds, {
@@ -277,6 +291,18 @@ function BulkActions({
         setShowDeleteConfirm(false);
       },
       onError: () => toast.error('Failed to delete chats'),
+    });
+  };
+
+  const handleUnlink = () => {
+    unlinkMutation.mutate(selectedIds, {
+      onSuccess: (res) => {
+        toast.success(
+          `Removed ${res.unlinked} chat(s) from your list — you can re-import them anytime.`,
+        );
+        onClear();
+      },
+      onError: () => toast.error('Failed to remove chats'),
     });
   };
 
@@ -366,6 +392,22 @@ function BulkActions({
         )}
       </div>
       )}
+
+      {/* Remove from my list — unlinks the caller (any role) without deleting
+          the shared chat; re-importable afterwards. */}
+      <button
+        onClick={handleUnlink}
+        disabled={unlinkMutation.isPending}
+        title="Remove these chats from your list. They stay available to re-import from your account."
+        className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+      >
+        {unlinkMutation.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <ListX className="h-3.5 w-3.5" />
+        )}
+        Remove from my list
+      </button>
 
       <button
         onClick={onClear}
@@ -563,11 +605,10 @@ export default function ChatsPage() {
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
   const user = useAuthStore((s) => s.user);
-  // Task 10: the owner-user dropdown is only meaningful for someone who can
-  // actually see more than their own chats. Admin+ always can; a plain user
-  // needs canViewAllChats — without it, the server forces every request back
-  // to their own chats anyway, so showing the picker would just be confusing.
-  const canFilterByOwner = isAdmin(user) || can(user, 'canViewAllChats');
+  // The owner-user dropdown only makes sense for someone who sees more than
+  // their own chats — that's admins and superadmins now. A regular user is
+  // always scoped to their own imported chats, so the picker is hidden.
+  const canFilterByOwner = isAdmin(user);
   const { data: teamUsers } = useTeamUsers();
 
   // Compact view: a third of the row height, no avatars. Persisted per browser.
@@ -604,8 +645,7 @@ export default function ChatsPage() {
     });
   };
   const [search, setSearch] = useState('');
-  // Query the server 300ms after the user stops typing, not per keystroke —
-  // the search filter also scans message text server-side.
+  // Query the server 300ms after the user stops typing, not per keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -631,6 +671,9 @@ export default function ChatsPage() {
     isLoadingMore,
   } = useAllChats({
     search: debouncedSearch || undefined,
+    // This management table shows only the chat name, so search by name —
+    // matching message bodies here would surface rows that look unrelated.
+    searchScope: 'name',
     messenger: messengerFilter,
     status: statusFilter || undefined,
     ownerId: ownerIdFilter || undefined,
@@ -683,8 +726,8 @@ export default function ChatsPage() {
         else if (!bTag) cmp = -1;
         else cmp = aTag.localeCompare(bTag);
       } else if (sortBy === 'ownerName') {
-        const aOwner = isChatGroup(a) ? '' : (a.ownerName ?? '');
-        const bOwner = isChatGroup(b) ? '' : (b.ownerName ?? '');
+        const aOwner = isChatGroup(a) ? '' : ownerLabel(a);
+        const bOwner = isChatGroup(b) ? '' : ownerLabel(b);
         // Chats without an owner sink to the bottom in both directions.
         if (!aOwner && !bOwner) cmp = 0;
         else if (!aOwner) cmp = 1;
@@ -890,6 +933,7 @@ export default function ChatsPage() {
           className="rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All labels</option>
+          <option value="none">No label</option>
           {(tagsData?.tags ?? []).map((tag) => (
             <option key={tag.id} value={tag.id}>{tag.name}</option>
           ))}
@@ -1234,8 +1278,11 @@ export default function ChatsPage() {
                     </td>
 
                     {/* Owner */}
-                    <td className="px-4 py-3 text-xs text-slate-500">
-                      {chat.ownerName ?? '—'}
+                    <td
+                      className="px-4 py-3 text-xs text-slate-500"
+                      title={(chat.owners ?? []).map((o) => o.name).join(', ') || undefined}
+                    >
+                      {ownerLabel(chat) || '—'}
                     </td>
 
                     {/* Tags */}

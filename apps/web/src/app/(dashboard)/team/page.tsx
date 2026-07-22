@@ -15,10 +15,9 @@ const roleConfig = {
   user: { label: 'User', icon: UserIcon, badgeClass: 'bg-slate-100 text-slate-600' },
 };
 
-const permissionLabels: Array<{ key: 'canCreateTags' | 'canSelfConnectMessengers' | 'canViewAllChats'; label: string }> = [
+const permissionLabels: Array<{ key: 'canCreateTags' | 'canSelfConnectMessengers'; label: string }> = [
   { key: 'canCreateTags', label: 'Create tags' },
   { key: 'canSelfConnectMessengers', label: 'Self-connect' },
-  { key: 'canViewAllChats', label: 'View all chats' },
 ];
 
 export default function TeamPage() {

@@ -1611,21 +1611,36 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           await adapter.connect();
           const chats = await adapter.listChats();
 
-          // Offer only chats that are not in Messengly yet. Soft-deleted chats
-          // stay importable — removing a chat and re-importing it is a real flow.
-          const existing = await prisma.chat.findMany({
+          // Org-level "new to Messengly" set — drives the org-wide "new chats
+          // pending" banner and the discovered-chat store, which are shared.
+          const orgExisting = await prisma.chat.findMany({
             where: { messenger, organizationId, deletedAt: null },
             select: { externalChatId: true },
           });
-          const imported = new Set(existing.map((c) => c.externalChatId));
-          const fresh = chats.filter((c) => !imported.has(c.externalChatId));
+          const orgImported = new Set(orgExisting.map((c) => c.externalChatId));
+          const orgFresh = chats.filter((c) => !orgImported.has(c.externalChatId));
 
           // This scan is the ground truth for the "new chats pending" banner.
-          await setPendingImports(organizationId, messenger, fresh.length);
-          const firstSeen = await syncDiscoveredChats(organizationId, messenger, fresh);
+          await setPendingImports(organizationId, messenger, orgFresh.length);
+          const firstSeen = await syncDiscoveredChats(organizationId, messenger, orgFresh);
+
+          // What THIS user can import: everything their account reaches that
+          // they don't already own (ChatOwner). A chat another member imported
+          // before them is still offered — importing links them as an owner so
+          // they can broadcast to it from their own account. Chats they already
+          // own are hidden (nothing to re-import).
+          const owned = await prisma.chat.findMany({
+            where: {
+              messenger, organizationId, deletedAt: null,
+              owners: { some: { userId: request.user.id } },
+            },
+            select: { externalChatId: true },
+          });
+          const ownedSet = new Set(owned.map((c) => c.externalChatId));
+          const offered = chats.filter((c) => !ownedSet.has(c.externalChatId));
 
           return reply.send({
-            chats: fresh.map((c) => ({ ...c, firstSeenAt: firstSeen[c.externalChatId] ?? null })),
+            chats: offered.map((c) => ({ ...c, firstSeenAt: firstSeen[c.externalChatId] ?? null })),
           });
         } finally {
           try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }

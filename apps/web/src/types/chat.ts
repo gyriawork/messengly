@@ -12,6 +12,10 @@ export interface Chat {
   status: string;
   ownerId?: string;
   ownerName?: string;
+  /** The single owner user (from ownerId) — the first importer. */
+  owner?: { id: string; name: string } | null;
+  /** Everyone whose connected account can reach this chat (ChatOwner links). */
+  owners?: Array<{ userId: string; name: string }>;
   messageCount: number;
   syncStatus?: string; // pending | syncing | synced | failed
   hasFullHistory?: boolean;
@@ -82,11 +86,15 @@ export interface Message {
 
 export interface ChatFilters {
   search?: string;
+  /** 'name' = match chat name only (management table); 'all' (default) also
+   *  matches message body + Gmail sender (used by the /messenger panel). */
+  searchScope?: 'name' | 'all';
   messenger?: MessengerType | null;
   status?: string;
   owner?: string;
   /** Filter to chats linked (ChatOwner) to this user id — Task 10's owner dropdown. */
   ownerId?: string;
+  /** A tag UUID, or the sentinel 'none' to show only chats with zero labels. */
   tagId?: string;
   limit?: number;
 }

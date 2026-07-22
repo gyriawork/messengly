@@ -273,8 +273,10 @@ export function ConnectAndImportWizard({
         {},
       );
       setChats(data.chats);
-      // Pre-select all by default
-      setSelected(new Set(data.chats.map((c) => c.externalChatId)));
+      // Start with NOTHING selected — the user picks exactly which chats to
+      // import. Pre-selecting all made a user who wanted one chat accidentally
+      // import the whole workspace (they saw an all-checked list).
+      setSelected(new Set());
       setStep('selecting');
     } catch (err) {
       setError(humanizeError(err, 'Failed to load chats'));

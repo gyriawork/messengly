@@ -32,6 +32,7 @@ export function useChats(filters?: ChatFilters) {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters?.search) params.set('search', filters.search);
+      if (filters?.searchScope) params.set('searchScope', filters.searchScope);
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
       if (filters?.owner) params.set('owner', filters.owner);
@@ -60,6 +61,7 @@ export function useAllChats(filters?: Omit<ChatFilters, 'limit'>) {
     queryFn: async ({ pageParam }: { pageParam: number }) => {
       const params = new URLSearchParams();
       if (filters?.search) params.set('search', filters.search);
+      if (filters?.searchScope) params.set('searchScope', filters.searchScope);
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
       if (filters?.owner) params.set('owner', filters.owner);
@@ -379,5 +381,22 @@ export function useBulkDeleteChats() {
   return useMutation({
     mutationFn: (chatIds: string[]) => api.delete('/api/chats/bulk', { body: { chatIds } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
+  });
+}
+
+/**
+ * "Remove from my list" — unlinks the caller from the selected chats (deletes
+ * their ChatOwner links) WITHOUT deleting the shared chat for others. The chats
+ * disappear from the caller's view and become re-importable from their account.
+ */
+export function useBulkUnlinkChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatIds: string[]) =>
+      api.post<{ unlinked: number }>('/api/chats/bulk/unlink', { chatIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['chats'] });
+      qc.invalidateQueries({ queryKey: ['pending-imports'] });
+    },
   });
 }

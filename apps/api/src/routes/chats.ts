@@ -22,7 +22,13 @@ const listChatsQuerySchema = z.object({
   owner: z.string().min(1).max(100).optional(), // free-text owner name filter (legacy, quietly deprecated by ownerId)
   ownerId: z.string().uuid().optional(), // filter to chats linked (ChatOwner) to this user
   search: z.string().min(1).max(200).optional(),
-  tagId: z.string().uuid().optional(),
+  // 'all' (default) matches chat name OR message body OR Gmail sender — the
+  // /messenger panel relies on this (e.g. finding Gmail threads by sender
+  // domain). 'name' restricts to the chat name only, for the /chats
+  // management table which displays nothing but the name (a body match there
+  // looks like a wrong result to the user).
+  searchScope: z.enum(['name', 'all']).default('all'),
+  tagId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   scope: z.enum(['org', 'my']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(1000).default(50),
@@ -54,6 +60,10 @@ const bulkDeleteBodySchema = z.object({
   chatIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
+const bulkUnlinkBodySchema = z.object({
+  chatIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
 // ─── Helpers ───
 
 function sendError(reply: FastifyReply, code: string, message: string, statusCode: number) {
@@ -71,18 +81,14 @@ function getOrgId(request: FastifyRequest): string | null {
 }
 
 /**
- * Task 6/10: whether the caller can see every chat in the org, or only the
- * ones linked to them via ChatOwner. Admin/superadmin always see everything;
- * a plain `user` needs canViewAllChats (DB-checked fresh, same pattern as
- * rbac.ts requirePermission — never trust a JWT claim for this).
+ * Whether the caller can see every chat in the org, or only the ones linked
+ * to them via ChatOwner. Only admins and superadmins see everything; a plain
+ * `user` ALWAYS sees just the chats they imported themselves. (The per-user
+ * canViewAllChats flag no longer grants org-wide visibility — regular users
+ * are strictly scoped to their own chats.)
  */
 async function canViewAllChats(request: FastifyRequest): Promise<boolean> {
-  if (request.user.role === 'admin' || request.user.role === 'superadmin') return true;
-  const record = await prisma.user.findUnique({
-    where: { id: request.user.id },
-    select: { canViewAllChats: true },
-  });
-  return record?.canViewAllChats ?? false;
+  return request.user.role === 'admin' || request.user.role === 'superadmin';
 }
 
 /**
@@ -119,7 +125,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
       }
 
-      const { messenger, status, owner, ownerId, search, tagId, scope, page, limit } = parsed.data;
+      const { messenger, status, owner, ownerId, search, searchScope, tagId, scope, page, limit } = parsed.data;
 
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -130,9 +136,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       // scope/canViewAll change what the query returns for the SAME params, so
       // both must be in the cache key — a prior bug here let scope=my leak a
-      // cached scope=default (or vice versa) within the 60s TTL.
+      // cached scope=default (or vice versa) within the 60s TTL. searchScope
+      // likewise: a name-scoped and all-scoped request share the same `search`
+      // string and would otherwise collide within the TTL.
       const queryHash = createHash('md5')
-        .update(JSON.stringify({ messenger, status, owner, search, tagId, scope, page, limit, userId: request.user.id, effectiveOwnerId }))
+        .update(JSON.stringify({ messenger, status, owner, search, searchScope, tagId, scope, page, limit, userId: request.user.id, effectiveOwnerId }))
         .digest('hex')
         .slice(0, 12);
 
@@ -161,14 +169,23 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       if (status) where.status = status;
       if (owner) where.ownerName = owner;
       if (search) {
-        where.OR = [
-          { name: { contains: search, mode: 'insensitive' } },
-          { messages: { some: { text: { contains: search, mode: 'insensitive' } } } },
-          // Match Gmail sender domain so /messenger?search=google.com works.
-          { messages: { some: { fromEmail: { contains: search, mode: 'insensitive' } } } },
-        ];
+        if (searchScope === 'name') {
+          // Name-only — the /chats table shows only the name, so matching
+          // message bodies would surface rows that look unrelated.
+          where.name = { contains: search, mode: 'insensitive' };
+        } else {
+          where.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { messages: { some: { text: { contains: search, mode: 'insensitive' } } } },
+            // Match Gmail sender domain so /messenger?search=google.com works.
+            { messages: { some: { fromEmail: { contains: search, mode: 'insensitive' } } } },
+          ];
+        }
       }
-      if (tagId) {
+      if (tagId === 'none') {
+        // Only chats with zero labels.
+        where.tags = { none: {} };
+      } else if (tagId) {
         where.tags = { some: { tagId } };
       }
 
@@ -1261,6 +1278,44 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ deleted: result.count });
+    },
+  );
+
+  // ─── POST /chats/bulk/unlink ───
+  // "Remove from my list" for any user. Deletes only the CALLER's ChatOwner
+  // links — the shared Chat row and everyone else's links survive (same
+  // mechanic as disconnecting an integration). The chats leave the caller's
+  // view and, because list-chats offers chats the caller doesn't own, become
+  // re-importable from their own account.
+
+  fastify.post(
+    '/chats/bulk/unlink',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = bulkUnlinkBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { chatIds } = parsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      // Scoped to the caller's own links AND to this org — a hand-crafted
+      // chatIds list can therefore only ever remove the caller's own ownership.
+      const result = await prisma.chatOwner.deleteMany({
+        where: {
+          userId: request.user.id,
+          chatId: { in: chatIds },
+          chat: { organizationId },
+        },
+      });
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      return reply.send({ unlinked: result.count });
     },
   );
 }

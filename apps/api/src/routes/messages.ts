@@ -62,17 +62,13 @@ function sendError(reply: FastifyReply, code: string, message: string, statusCod
 }
 
 /**
- * Task 6/10: whether the caller can see every chat in the org, or only the
- * ones linked to them via ChatOwner. Mirrors chats.ts's canViewAllChats —
- * DB-checked fresh, never trusted from the JWT.
+ * Whether the caller can see every chat in the org, or only the ones linked
+ * to them via ChatOwner. Mirrors chats.ts's canViewAllChats: only admins and
+ * superadmins see everything; a regular user is always scoped to their own
+ * imported chats.
  */
 async function canViewAllChats(request: FastifyRequest): Promise<boolean> {
-  if (request.user.role === 'admin' || request.user.role === 'superadmin') return true;
-  const record = await prisma.user.findUnique({
-    where: { id: request.user.id },
-    select: { canViewAllChats: true },
-  });
-  return record?.canViewAllChats ?? false;
+  return request.user.role === 'admin' || request.user.role === 'superadmin';
 }
 
 /**
