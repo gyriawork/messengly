@@ -1107,7 +1107,7 @@ export const faqItems: FaqItem[] = [
     bgClass: 'bg-messenger-sl-bg',
     textClass: 'text-messenger-sl-text',
     steps: [
-      { text: 'Click "Connect" on the Slack card above, then click "Connect with Slack".' },
+      { text: 'Click "Connect" on the Slack card above, then choose how to send: "Connect as bot" (messages send from the app) or "Connect as my Slack account" (messages send as you).' },
       { text: 'You will be redirected to Slack. Sign in if needed, then review and authorize the requested permissions.' },
       { text: 'After authorizing, you will be redirected back here automatically. Your Slack workspace will be connected.' },
       {
@@ -1141,7 +1141,7 @@ export const faqItems: FaqItem[] = [
     steps: [
       { text: 'Click "Connect" — Teams has no API login for personal accounts, so a browser opens on the server and streams its screen to you here.' },
       { text: 'Click into the picture and sign in exactly as you normally would, including any two-factor codes.' },
-      { text: 'Microsoft may show a space picker ("Личное" / organization) — pick your personal account.' },
+      { text: 'Microsoft may show a space picker ("Personal" / organization) — pick your personal account.' },
       { text: 'Wait until your chat list actually appears in the streamed browser.' },
       { text: 'Press "Save session" — this is required, the connection is not saved automatically.' },
       { text: 'Each teammate who connects their own Teams gets an isolated session — connecting yours never disturbs anyone else’s.' },

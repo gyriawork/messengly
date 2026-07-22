@@ -757,7 +757,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       await adapter.connect();
 
       const io = getIO();
-      const room = `org:${organizationId}`;
+      // Import progress carries the name of each chat being imported — send it
+      // only to the importer, not the whole org room (m7).
+      const room = `user:${request.user.id}`;
       const total = selectedChats.length;
       let done = 0;
       let failed = 0;
