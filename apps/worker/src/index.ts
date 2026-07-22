@@ -206,6 +206,7 @@ async function sendMessengerBatch(
   messengerChats: Array<{ id: string; chatId: string; chat: { externalChatId: string; messenger: string }; retryCount: number }>,
   antibanConfig: AntibanConfig,
   isRetry: boolean,
+  createdById: string,
   attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>,
   senderConfig?: Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
 ): Promise<{ sent: number; failed: number; skipped: number }> {
@@ -264,14 +265,31 @@ async function sendMessengerBatch(
       return { sent: 0, failed: messengerChats.length, skipped: preSkipped };
     }
   } else {
-    integration = await prisma.integration.findFirst({
+    // No explicit sender chosen: default to the broadcast creator's own
+    // connection so the message goes out under the account that started
+    // it, not whichever account happens to be oldest. Falls back to the
+    // legacy org-oldest row when the creator has no personal connection
+    // (e.g. only an org-shared account exists).
+    integration = await prisma.integration.findUnique({
       where: {
-        messenger,
-        organizationId,
-        status: 'connected',
+        messenger_organizationId_userId_scope: {
+          messenger,
+          organizationId,
+          userId: createdById,
+          scope: 'user',
+        },
       },
-      orderBy: { createdAt: 'asc' },
     });
+    if (!integration || integration.status !== 'connected') {
+      integration = await prisma.integration.findFirst({
+        where: {
+          messenger,
+          organizationId,
+          status: 'connected',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
   }
 
   let adapter;
@@ -618,6 +636,7 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
         })),
         antibanConfig,
         false,
+        broadcast.createdById,
         broadcastAttachments,
         broadcast.senderConfig as Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
       );
@@ -721,6 +740,7 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
           })),
           antibanConfig,
           true,
+          broadcast.createdById,
           retryAttachments,
           broadcast.senderConfig as Record<string, { integrationId: string; sendAs?: 'bot' | 'user' }> | null,
         );

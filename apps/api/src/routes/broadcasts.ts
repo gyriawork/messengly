@@ -603,12 +603,23 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Validate all chatIds belong to this org
+      // Validate all chatIds belong to this org. Role `user` is further
+      // restricted to chats they own (via ChatOwner) — canViewAllChats only
+      // affects viewing, never broadcasting (explicit requirement).
+      const isPlainUser = request.user.role === 'user';
       const validChats = await prisma.chat.findMany({
-        where: { id: { in: chatIds }, organizationId },
+        where: {
+          id: { in: chatIds },
+          organizationId,
+          ...(isPlainUser ? { owners: { some: { userId: request.user.id } } } : {}),
+        },
         select: { id: true },
       });
       const validChatIds = validChats.map((c) => c.id);
+
+      if (isPlainUser && validChatIds.length !== new Set(chatIds).size) {
+        return sendError(reply, 'VALIDATION_ERROR', 'You can only broadcast to chats assigned to you', 422);
+      }
 
       if (validChatIds.length === 0) {
         return sendError(reply, 'VALIDATION_ERROR', 'No valid chats found in this organization', 422);
@@ -723,6 +734,8 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Only draft or scheduled broadcasts can be updated', 422);
       }
 
+      const isPlainUser = request.user.role === 'user';
+
       if (senderConfig !== undefined) {
         const senderCheck = await validateSenderConfig(request, organizationId, senderConfig);
         if (!senderCheck.ok) {
@@ -745,13 +758,22 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           data: updateData,
         });
 
-        // Replace chatIds if provided
+        // Replace chatIds if provided. Same ChatOwner scoping as create —
+        // canViewAllChats never grants broadcast rights.
         if (chatIds !== undefined) {
           const validChats = await tx.chat.findMany({
-            where: { id: { in: chatIds }, organizationId },
+            where: {
+              id: { in: chatIds },
+              organizationId,
+              ...(isPlainUser ? { owners: { some: { userId: request.user.id } } } : {}),
+            },
             select: { id: true },
           });
           const validChatIds = validChats.map((c) => c.id);
+
+          if (isPlainUser && validChatIds.length !== new Set(chatIds).size) {
+            throw new Error('NOT_OWNED_CHATS');
+          }
 
           if (validChatIds.length === 0) {
             throw new Error('NO_VALID_CHATS');
@@ -769,14 +791,17 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
         return b;
       }).catch((err) => {
-        if (err instanceof Error && err.message === 'NO_VALID_CHATS') {
-          return null;
+        if (err instanceof Error && (err.message === 'NO_VALID_CHATS' || err.message === 'NOT_OWNED_CHATS')) {
+          return err.message;
         }
         throw err;
       });
 
-      if (updated === null) {
+      if (updated === 'NO_VALID_CHATS') {
         return sendError(reply, 'VALIDATION_ERROR', 'No valid chats found in this organization', 422);
+      }
+      if (updated === 'NOT_OWNED_CHATS') {
+        return sendError(reply, 'VALIDATION_ERROR', 'You can only broadcast to chats assigned to you', 422);
       }
 
       // Update scheduled job if scheduledAt changed

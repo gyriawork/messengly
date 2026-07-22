@@ -107,9 +107,15 @@ export function BroadcastWizard() {
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
+  const authUser = useAuthStore((s) => s.user);
   // Stream in ALL chats page by page so every imported chat is selectable as
   // a recipient — a hard limit here would silently drop recipients past it.
-  const { chats: loadedChats } = useAllChats();
+  // Role `user` always broadcasts to only their own chats (server-enforced,
+  // regardless of canViewAllChats) — filter here too so the picker never
+  // offers a chat the send would then reject with a 422.
+  const { chats: loadedChats } = useAllChats(
+    authUser?.role === 'user' ? { ownerId: authUser.id } : undefined,
+  );
   const { data: templatesData } = useTemplates();
   const { data: tagsData } = useTags();
   const tags = tagsData?.tags ?? [];
@@ -200,7 +206,6 @@ export function BroadcastWizard() {
   // Task 7/8: who sends each messenger's batch. Untouched = omitted from the
   // payload = legacy behavior (the org's default connected account) — a user
   // with no personal connections never sees this section do anything.
-  const authUser = useAuthStore((s) => s.user);
   const admin = isAdmin(authUser);
   const { data: integrationsData } = useIntegrations();
   const { data: teamUsers } = useTeamUsers();
@@ -1109,7 +1114,7 @@ export function BroadcastWizard() {
                           }}
                           className="rounded-lg border-[1.5px] border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-accent focus:outline-none"
                         >
-                          <option value="">Default account</option>
+                          <option value="">Default (your account if connected)</option>
                           {options.map((o) => (
                             <option key={o.key} value={o.key}>{o.label}</option>
                           ))}
