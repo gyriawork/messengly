@@ -76,11 +76,6 @@ const analyticsQuerySchema = z.object({
 
 // ─── Helpers ───
 
-/** Strip HTML tags from broadcast message text to prevent XSS when rendered. */
-function stripHtml(text: string): string {
-  return text.replace(/<[^>]*>/g, '');
-}
-
 function sendError(reply: FastifyReply, code: string, message: string, statusCode: number) {
   return reply.status(statusCode).send({
     error: { code, message, statusCode },
@@ -602,7 +597,10 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       }
 
       const { name, messageText: rawMessageText, chatIds, scheduledAt, templateId, attachments, senderConfig } = parsed.data;
-      const messageText = stripHtml(rawMessageText);
+      // Store the text exactly as typed — display is React-escaped and no
+      // messenger send path renders HTML (Telegram=Markdown, others plain),
+      // so stripping "<...>" only destroyed legitimate content like <Name> (M13).
+      const messageText = rawMessageText;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
@@ -727,7 +725,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
       const { id } = paramsParsed.data;
       const { name, messageText: rawMessageText, chatIds, scheduledAt, senderConfig } = bodyParsed.data;
-      const messageText = rawMessageText !== undefined ? stripHtml(rawMessageText) : undefined;
+      const messageText = rawMessageText;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);

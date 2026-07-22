@@ -24,6 +24,36 @@ const DEFAULT_ANTIBAN: Record<Messenger, {
   teams: { messagesPerBatch: 5, delayBetweenMessages: 8, delayBetweenBatches: 300, maxMessagesPerHour: 40, maxMessagesPerDay: 200 },
 };
 
+// Safety ceilings, mirrored from apps/api settings (M12). Applied to stored
+// settings at send time so a row saved before the API clamp existed can't
+// drive an unsafe rate.
+const ANTIBAN_CEILINGS: Record<Messenger, {
+  maxMessagesPerHour: number; maxMessagesPerDay: number; messagesPerBatch: number;
+  minDelayBetweenMessages: number; minDelayBetweenBatches: number;
+}> = {
+  telegram: { maxMessagesPerHour: 100, maxMessagesPerDay: 450, messagesPerBatch: 20, minDelayBetweenMessages: 2, minDelayBetweenBatches: 60 },
+  whatsapp: { maxMessagesPerHour: 40, maxMessagesPerDay: 120, messagesPerBatch: 6, minDelayBetweenMessages: 8, minDelayBetweenBatches: 300 },
+  slack: { maxMessagesPerHour: 400, maxMessagesPerDay: 3000, messagesPerBatch: 60, minDelayBetweenMessages: 0.5, minDelayBetweenBatches: 15 },
+  gmail: { maxMessagesPerHour: 160, maxMessagesPerDay: 600, messagesPerBatch: 10, minDelayBetweenMessages: 4, minDelayBetweenBatches: 60 },
+  teams: { maxMessagesPerHour: 80, maxMessagesPerDay: 300, messagesPerBatch: 10, minDelayBetweenMessages: 5, minDelayBetweenBatches: 120 },
+};
+
+function clampAntibanConfig<T extends {
+  messagesPerBatch: number; delayBetweenMessages: number; delayBetweenBatches: number;
+  maxMessagesPerHour: number; maxMessagesPerDay: number;
+}>(messenger: string, v: T): T {
+  const c = ANTIBAN_CEILINGS[messenger as Messenger];
+  if (!c) return v;
+  return {
+    ...v,
+    messagesPerBatch: Math.min(v.messagesPerBatch, c.messagesPerBatch),
+    delayBetweenMessages: Math.max(v.delayBetweenMessages, c.minDelayBetweenMessages),
+    delayBetweenBatches: Math.max(v.delayBetweenBatches, c.minDelayBetweenBatches),
+    maxMessagesPerHour: Math.min(v.maxMessagesPerHour, c.maxMessagesPerHour),
+    maxMessagesPerDay: Math.min(v.maxMessagesPerDay, c.maxMessagesPerDay),
+  };
+}
+
 // ─── Redis connections ───
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -119,7 +149,7 @@ async function getAntibanSettings(
   });
 
   if (stored) {
-    return {
+    return clampAntibanConfig(messenger, {
       messagesPerBatch: stored.messagesPerBatch,
       delayBetweenMessages: stored.delayBetweenMessages,
       delayBetweenBatches: stored.delayBetweenBatches,
@@ -128,7 +158,7 @@ async function getAntibanSettings(
       autoRetryEnabled: stored.autoRetryEnabled,
       maxRetryAttempts: stored.maxRetryAttempts,
       retryWindowHours: stored.retryWindowHours,
-    };
+    });
   }
 
   const defaults = DEFAULT_ANTIBAN[messenger as Messenger];

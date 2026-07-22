@@ -22,6 +22,35 @@ const DEFAULT_ANTIBAN: Record<Messenger, {
   teams: { messagesPerBatch: 5, delayBetweenMessages: 8, delayBetweenBatches: 300, maxMessagesPerHour: 40, maxMessagesPerDay: 200 },
 };
 
+// Safety ceilings actually enforced server-side (M12). The zod bounds are
+// generous; these are the sane per-messenger maxima — an admin's value is
+// CLAMPED into range (not rejected), so no one can save a guaranteed-ban rate.
+// (Worker re-clamps too, in getAntibanSettings, so pre-existing rows are safe.)
+const ANTIBAN_CEILINGS: Record<Messenger, {
+  maxMessagesPerHour: number; maxMessagesPerDay: number; messagesPerBatch: number;
+  minDelayBetweenMessages: number; minDelayBetweenBatches: number;
+}> = {
+  telegram: { maxMessagesPerHour: 100, maxMessagesPerDay: 450, messagesPerBatch: 20, minDelayBetweenMessages: 2, minDelayBetweenBatches: 60 },
+  whatsapp: { maxMessagesPerHour: 40, maxMessagesPerDay: 120, messagesPerBatch: 6, minDelayBetweenMessages: 8, minDelayBetweenBatches: 300 },
+  slack: { maxMessagesPerHour: 400, maxMessagesPerDay: 3000, messagesPerBatch: 60, minDelayBetweenMessages: 0.5, minDelayBetweenBatches: 15 },
+  gmail: { maxMessagesPerHour: 160, maxMessagesPerDay: 600, messagesPerBatch: 10, minDelayBetweenMessages: 4, minDelayBetweenBatches: 60 },
+  teams: { maxMessagesPerHour: 80, maxMessagesPerDay: 300, messagesPerBatch: 10, minDelayBetweenMessages: 5, minDelayBetweenBatches: 120 },
+};
+
+function clampAntiban(messenger: Messenger, v: {
+  messagesPerBatch: number; delayBetweenMessages: number; delayBetweenBatches: number;
+  maxMessagesPerHour: number; maxMessagesPerDay: number;
+}) {
+  const c = ANTIBAN_CEILINGS[messenger];
+  return {
+    messagesPerBatch: Math.min(v.messagesPerBatch, c.messagesPerBatch),
+    delayBetweenMessages: Math.max(v.delayBetweenMessages, c.minDelayBetweenMessages),
+    delayBetweenBatches: Math.max(v.delayBetweenBatches, c.minDelayBetweenBatches),
+    maxMessagesPerHour: Math.min(v.maxMessagesPerHour, c.maxMessagesPerHour),
+    maxMessagesPerDay: Math.min(v.maxMessagesPerDay, c.maxMessagesPerDay),
+  };
+}
+
 // ─── Zod Schemas ───
 
 const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail', 'teams']);
@@ -209,15 +238,18 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
       }
 
       const {
+        autoRetryEnabled,
+        maxRetryAttempts,
+        retryWindowHours,
+      } = bodyParsed.data;
+      // Clamp the volume/delay fields into the safe per-messenger range (M12).
+      const {
         messagesPerBatch,
         delayBetweenMessages,
         delayBetweenBatches,
         maxMessagesPerHour,
         maxMessagesPerDay,
-        autoRetryEnabled,
-        maxRetryAttempts,
-        retryWindowHours,
-      } = bodyParsed.data;
+      } = clampAntiban(messenger, bodyParsed.data);
 
       const upserted = await prisma.antibanSettings.upsert({
         where: {
