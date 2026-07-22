@@ -317,23 +317,31 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Org-level: every member sees the organization's connected accounts so
-      // regular users can import chats from messengers the superadmin connected.
-      const ck = cacheKey(organizationId, 'integrations');
+      // Admin/superadmin see every connection in the org. A regular user only
+      // needs the org-shared connections plus their own personal ones — never
+      // other members' personal connections or anyone's sync-error text. The
+      // cache key is therefore per-viewer.
+      const canViewAll = request.user.role === 'admin' || request.user.role === 'superadmin';
+      const ck = cacheKey(organizationId, 'integrations', canViewAll ? 'all' : `u:${request.user.id}`);
       const cached = await cacheGet(ck);
       if (cached) {
         return reply.send(cached);
       }
 
       const where: Record<string, unknown> = { organizationId };
+      if (!canViewAll) {
+        where.OR = [{ scope: 'org' }, { userId: request.user.id }];
+      }
 
       const integrations = await prisma.integration.findMany({
         where,
         orderBy: { createdAt: 'desc' },
       });
 
+      const sanitized = integrations.map(sanitizeIntegration);
       const response = {
-        integrations: integrations.map(sanitizeIntegration),
+        // Hide the raw sync-error text from non-admins (status still shows).
+        integrations: canViewAll ? sanitized : sanitized.map((i) => ({ ...i, syncError: null })),
       };
       await cacheSet(ck, response, 300);
 
@@ -446,8 +454,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Adapter verification is done; disconnect it (persistent listeners use their own connections)
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
       // Notify frontend immediately so the status badge updates without waiting for cache
       try {
@@ -523,8 +530,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // connection, or a manual/legacy link with no integrationId).
       await prisma.chatOwner.deleteMany({ where: { integrationId: integration.id } });
 
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
       logIntegrationActivity(request, organizationId, messenger, 'disconnected');
 
@@ -585,8 +591,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // this connection's links go, other owners keep their chats.
       await prisma.chatOwner.deleteMany({ where: { integrationId: integration.id } });
 
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${integration.userId}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       if (integration.userId === request.user.id) {
@@ -685,8 +690,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Adapter verification is done; disconnect it (persistent listeners use their own connections)
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
       // Notify frontend immediately so the status badge updates without waiting for cache
       try {
@@ -959,8 +963,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         await client.disconnect().catch(() => {});
 
         // Invalidate server-side cache so the next API fetch returns fresh status
-        await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
         // Notify frontend immediately so the status badge updates
         try {
@@ -1068,8 +1071,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         await adapter.disconnect().catch(() => {});
 
-        await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
         try {
           getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
@@ -1206,8 +1208,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           state.needs2FA = false;
           await client.disconnect().catch(() => {});
 
-          await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
+          await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
           try {
             getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
           } catch { /* socket not ready — non-critical */ }
@@ -1506,8 +1507,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             },
           });
 
-          await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${ownerId}`));
+          await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
           // Notify frontend immediately so the status badge updates
           try {
@@ -1725,8 +1725,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       },
     });
 
-    await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-    await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+    await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
     try {
       getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'connected' });
@@ -1956,8 +1955,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         where: { messenger: 'teams', organizationId, userId: request.user.id, scope },
         data: { status: 'disconnected' },
       });
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
       try {
         getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'teams', status: 'disconnected' });

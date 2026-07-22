@@ -428,8 +428,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       }
 
       // Invalidate integrations cache so the frontend sees fresh "connected" status
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
       // Notify connected WebSocket clients so the status badge updates instantly
       try {
@@ -679,8 +678,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       }
 
       // Invalidate integrations cache so frontend immediately sees "Connected"
-      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', '*'));
 
       // Notify connected WebSocket clients so the status badge updates instantly
       try {

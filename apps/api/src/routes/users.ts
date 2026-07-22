@@ -242,7 +242,15 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
         orderBy: { createdAt: 'desc' },
       });
 
-      return reply.send(users.map(sanitizeUser));
+      // Admin/superadmin get the full roster (email, role, permissions);
+      // a regular user only ever needs display names (e.g. owner labels), so
+      // they get a minimal id+name projection — no emails/roles/permissions leak.
+      const isPrivileged = request.user.role === 'admin' || request.user.role === 'superadmin';
+      return reply.send(
+        isPrivileged
+          ? users.map(sanitizeUser)
+          : users.map((u) => ({ id: u.id, name: u.name })),
+      );
     },
   );
 

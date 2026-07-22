@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requirePermission, requireMinRole } from '../middleware/rbac.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
@@ -41,9 +41,12 @@ function getOrgId(request: FastifyRequest): string | null {
 
 export default async function tagRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  // Admin/superadmin always manage tags; a plain `user` needs the
-  // canCreateTags permission (Task 6) — org admins can restrict it per user.
+  // Create/rename: admin+ always, or a plain `user` with the canCreateTags
+  // permission (Task 6). Delete is admin-only regardless — it cascades the
+  // label off every chat in the org, so a permitted-but-junior user (the flag
+  // defaults on) must not be able to wipe a shared label.
   const tagWritePreHandlers = [authenticate, requirePermission('canCreateTags')];
+  const tagDeletePreHandlers = [authenticate, requireMinRole('admin')];
 
   // ─── GET /tags ───
 
@@ -230,7 +233,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
   fastify.delete(
     '/tags/:id',
-    { preHandler: tagWritePreHandlers },
+    { preHandler: tagDeletePreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = tagIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
