@@ -22,6 +22,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Tag,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -1152,7 +1153,14 @@ export function BroadcastWizard() {
                   );
                 })}
               </div>
-              {estimates.totalSeconds > 0 && (
+              {!antibanData ? (
+                // Until the org's anti-ban settings load, the estimate would use
+                // optimistic defaults — show a placeholder instead of a wrong number (p34).
+                <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-sm text-slate-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Calculating estimated duration…
+                </div>
+              ) : estimates.totalSeconds > 0 ? (
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-sm">
                   <span className="text-slate-500">
                     Total (messengers run in parallel):{' '}
@@ -1167,7 +1175,7 @@ export function BroadcastWizard() {
                     </span>
                   </span>
                 </div>
-              )}
+              ) : null}
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
                 Based on your current Broadcast Settings — change the pacing there and this
                 estimate updates.

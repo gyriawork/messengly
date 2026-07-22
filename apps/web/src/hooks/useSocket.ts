@@ -22,6 +22,7 @@ export function useSocket() {
   const queryClient = useQueryClient();
   const queryClientRef = useRef(queryClient);
   const connectedRef = useRef(false);
+  const everConnectedRef = useRef(false);
   const chatUpdateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep queryClient ref up to date without triggering socket reconnection
@@ -57,8 +58,19 @@ export function useSocket() {
     });
 
     socket.on('connect', () => {
+      const isReconnect = everConnectedRef.current;
       connectedRef.current = true;
+      everConnectedRef.current = true;
       console.log('[WS] Connected');
+      // On a RECONNECT, catch up on anything that reached a terminal state while
+      // we were offline — e.g. a broadcast that finished mid-disconnect, whose
+      // one-shot status event we missed (m25). Refetching surfaces the real
+      // current status even though the missed toast itself can't be replayed.
+      if (isReconnect) {
+        queryClientRef.current.invalidateQueries({ queryKey: ['broadcasts'] });
+        queryClientRef.current.invalidateQueries({ queryKey: ['broadcast'] });
+        queryClientRef.current.invalidateQueries({ queryKey: ['integrations'] });
+      }
     });
 
     socket.on('disconnect', (reason) => {
