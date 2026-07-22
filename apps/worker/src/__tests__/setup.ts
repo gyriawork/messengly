@@ -4,6 +4,10 @@ import { vi } from 'vitest';
 process.env.REDIS_URL = 'redis://localhost:6379';
 process.env.CREDENTIALS_ENCRYPTION_KEY = 'a'.repeat(64);
 process.env.NODE_ENV = 'test';
+// ioredis is mocked here (no eval/set), so exercise the legacy local-counter
+// anti-ban path in tests. The Redis sliding-window path is unit-tested
+// separately against a real Redis (apps/worker/src/lib/rate-limiter.ts).
+process.env.ANTIBAN_REDIS_QUOTAS = 'off';
 
 // ─── Mock ioredis ───
 vi.mock('ioredis', () => {

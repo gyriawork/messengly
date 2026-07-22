@@ -516,8 +516,11 @@ describe('Broadcast Worker', () => {
     it('should use custom antiban settings when stored in the database', async () => {
       stubDefaultBroadcast();
 
+      // messagesPerBatch high enough that 3 chats never hit a batch boundary —
+      // the worker now floors delayBetweenBatches to a safe minimum (M12), so a
+      // boundary would introduce a real 60s wait and time the test out.
       (prisma.antibanSettings.findUnique as Mock).mockResolvedValue({
-        messagesPerBatch: 1,
+        messagesPerBatch: 10,
         delayBetweenMessages: 0,
         delayBetweenBatches: 0,
         maxMessagesPerHour: 999,

@@ -1,10 +1,12 @@
 import { Worker, Queue, type Job, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
+import { randomUUID } from 'node:crypto';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
 import { MessengerError, type SendFailurePolicy } from './integrations/base.js';
 import { ensureChat } from './services/chat-service.js';
+import { reserveSend, acquireAccountLock, renewAccountLock, releaseAccountLock } from './lib/rate-limiter.js';
 import { emojify } from 'node-emoji';
 type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail' | 'teams';
 
@@ -68,6 +70,26 @@ const bullConnection = connection as unknown as ConnectionOptions;
 
 // Separate connection for pub/sub notifications
 const pubClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+
+// Redis-backed per-account anti-ban quotas + account lock (B3/M8/M9/M11).
+// Kill-switch: set ANTIBAN_REDIS_QUOTAS=off to fall back to the legacy
+// per-run local counters if the shared quotas ever misbehave in prod.
+const ANTIBAN_REDIS_QUOTAS = process.env.ANTIBAN_REDIS_QUOTAS !== 'off';
+
+// Reused for re-enqueuing a broadcast that hit its daily cap or is waiting on
+// a busy account (M9/M11). Deterministic jobId → one resume, not a pile-up.
+const resumeQueue = new Queue('broadcast', { connection: bullConnection });
+async function scheduleBroadcastResume(broadcastId: string, organizationId: string, delayMs: number): Promise<void> {
+  try {
+    await resumeQueue.add(
+      'broadcast:send',
+      { broadcastId, organizationId },
+      { delay: Math.max(1000, Math.floor(delayMs)), jobId: `broadcast-resume-${broadcastId}`, removeOnComplete: true, removeOnFail: true },
+    );
+  } catch (err) {
+    console.error('[antiban] failed to schedule broadcast resume', broadcastId, err);
+  }
+}
 
 // Unhandled 'error' events on ioredis crash the process — log instead; ioredis
 // reconnects on its own.
@@ -322,6 +344,25 @@ async function sendMessengerBatch(
     }
   }
 
+  // Account lock (B3): only one broadcast sends through a given account at a
+  // time. If another run holds it, defer this messenger's chats and resume
+  // shortly — never block/poll (would starve the concurrency-limited pool).
+  let lockToken: string | null = null;
+  if (ANTIBAN_REDIS_QUOTAS && integration) {
+    lockToken = `${broadcastId}:${randomUUID()}`;
+    const got = await acquireAccountLock(connection, integration.id, lockToken);
+    if (!got) {
+      lockToken = null;
+      await prisma.broadcastChat.updateMany({
+        where: { id: { in: messengerChats.map((c) => c.id) }, status: { in: ['pending', 'sending'] } },
+        data: { status: 'pending', errorReason: 'Waiting for the account to finish another broadcast' },
+      });
+      await scheduleBroadcastResume(broadcastId, organizationId, 120_000);
+      log.info(`Account busy — deferring ${messenger} batch`, { broadcastId, integrationId: integration.id });
+      return { sent: 0, failed: 0, skipped: preSkipped };
+    }
+  }
+
   let adapter;
   try {
     if (integration) {
@@ -387,21 +428,58 @@ async function sendMessengerBatch(
       break;
     }
 
-    // Check hourly/daily limits
-    if (hourlyCount >= maxMessagesPerHour) {
-      log.info(`Hourly limit reached for ${messenger}, waiting 60 seconds`, { broadcastId });
-      await sleep(60);
-      hourlyCount = 0;
-    }
-    if (dailyCount >= maxMessagesPerDay) {
-      log.warn(`Daily limit reached for ${messenger}, stopping batch`, { broadcastId });
-      // Mark remaining as pending so they can be retried later
-      const remainingIds = messengerChats.slice(i).map((c) => c.id);
-      await prisma.broadcastChat.updateMany({
-        where: { id: { in: remainingIds } },
-        data: { status: 'pending', errorReason: 'Daily limit reached, will retry' },
-      });
-      break;
+    // Hourly/daily limits. Redis path (default): a real sliding window shared
+    // per account across broadcasts/retries/workers (B3/M8). Legacy path (kill
+    // switch off): the old per-run local counters.
+    if (ANTIBAN_REDIS_QUOTAS && integration) {
+      if (lockToken) await renewAccountLock(connection, integration.id, lockToken);
+      let dailyCapped = false;
+      while (true) {
+        const r = await reserveSend(
+          connection,
+          integration.id,
+          { maxHour: maxMessagesPerHour, maxDay: maxMessagesPerDay },
+          bc.id,
+        );
+        if (r.status === 'ok') break;
+        if (r.status === 'day') {
+          // M9/M11: park the rest and schedule a resume ~when the window frees
+          // (not on worker restart). Quota carries across the resume because the
+          // ZSET is keyed by integrationId, not broadcastId.
+          log.warn(`Daily limit reached for ${messenger} — scheduling resume`, { broadcastId, waitMs: r.waitMs });
+          const remainingIds = messengerChats.slice(i).map((c) => c.id);
+          await prisma.broadcastChat.updateMany({
+            where: { id: { in: remainingIds }, status: { in: ['pending', 'sending'] } },
+            data: { status: 'pending', errorReason: 'Daily limit reached, will retry' },
+          });
+          await scheduleBroadcastResume(broadcastId, organizationId, Math.min(Math.max(r.waitMs, 60_000), 86_400_000));
+          dailyCapped = true;
+          break;
+        }
+        // r.status === 'hour' (M8): wait until the oldest send leaves the 60-min
+        // window, capped so a cancel stays responsive. Honour cancel between waits.
+        const stillLive = await prisma.broadcast.findUnique({ where: { id: broadcastId }, select: { status: true } });
+        if (stillLive?.status === 'canceling' || stillLive?.status === 'canceled') { dailyCapped = false; break; }
+        if (lockToken) await renewAccountLock(connection, integration.id, lockToken);
+        log.info(`Hourly limit reached for ${messenger} — waiting ${Math.round(Math.min(Math.max(r.waitMs, 1000), 65_000) / 1000)}s`, { broadcastId });
+        await sleep(Math.min(Math.max(r.waitMs, 1000), 65_000) / 1000);
+      }
+      if (dailyCapped) break;
+    } else {
+      if (hourlyCount >= maxMessagesPerHour) {
+        log.info(`Hourly limit reached for ${messenger}, waiting 60 seconds`, { broadcastId });
+        await sleep(60);
+        hourlyCount = 0;
+      }
+      if (dailyCount >= maxMessagesPerDay) {
+        log.warn(`Daily limit reached for ${messenger}, stopping batch`, { broadcastId });
+        const remainingIds = messengerChats.slice(i).map((c) => c.id);
+        await prisma.broadcastChat.updateMany({
+          where: { id: { in: remainingIds } },
+          data: { status: 'pending', errorReason: 'Daily limit reached, will retry' },
+        });
+        break;
+      }
     }
 
     // Batch boundary
@@ -500,6 +578,9 @@ async function sendMessengerBatch(
       await adapter.disconnect();
     } catch {
       // Non-critical
+    }
+    if (lockToken && integration) {
+      await releaseAccountLock(connection, integration.id, lockToken);
     }
   }
 
