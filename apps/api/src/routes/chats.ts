@@ -174,6 +174,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       // restricted caller (canViewAllChats=false) — see resolveOwnerFilter().
       if (effectiveOwnerId) {
         where.owners = { some: { userId: effectiveOwnerId } };
+      } else if (canViewAll) {
+        // Admin/superadmin see the org's chats, but only ones SOMEONE still
+        // owns — a chat left with zero owners (every user removed it from
+        // their list) is no longer "imported by anyone" and drops off the
+        // admin's list too. It stays re-importable (the Chat row survives).
+        where.owners = { some: {} };
       }
 
       if (messenger) where.messenger = messenger;
@@ -246,7 +252,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           where: {
             organizationId,
             deletedAt: null,
-            ...(canViewAll ? {} : { owners: { some: { userId: request.user.id } } }),
+            ...(canViewAll ? { owners: { some: {} } } : { owners: { some: { userId: request.user.id } } }),
           },
           _count: true,
         }),
@@ -678,6 +684,14 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         imported.push({ id: chat.id, name: chat.name, externalChatId });
       }
 
+      // These are in Messengly now — drop them from the "new/pending" set so
+      // the banner stops counting them immediately (not just at the next scan).
+      if (imported.length > 0) {
+        await prisma.discoveredChat.deleteMany({
+          where: { organizationId, messenger, externalChatId: { in: imported.map((i) => i.externalChatId) } },
+        });
+      }
+
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ imported, count: imported.length });
@@ -892,14 +906,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         failed,
       });
 
-      // Imported chats are no longer "new"; the next scan recomputes exactly.
+      // Imported chats are no longer "new" — drop them from the discovered set
+      // so the banner's 7-day count reflects it immediately.
       if (imported.length > 0) {
-        const org = await prisma.organization.findUnique({
-          where: { id: organizationId },
-          select: { pendingImports: true },
+        await prisma.discoveredChat.deleteMany({
+          where: { organizationId, messenger, externalChatId: { in: imported.map((i) => i.externalChatId) } },
         });
-        const pending = ((org?.pendingImports as PendingImports | null) ?? {})[messenger]?.count ?? 0;
-        await setPendingImports(organizationId, messenger, Math.max(0, pending - imported.length));
       }
 
       // Invalidate caches
@@ -914,8 +926,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   );
 
   // ─── GET /chats/pending-imports ───
-  // Feeds the "new chats pending" banner: per-messenger counts of chats seen
-  // in the latest scans that are not imported yet.
+  // Feeds the "new chats pending" banner. A chat counts as NEW only for 7 days
+  // after it is first discovered (DiscoveredChat.firstSeenAt) and while it is
+  // still not imported — after a week it stops showing as new. Computed live
+  // from DiscoveredChat rather than the stored snapshot, so the count is always
+  // current (the stored pendingImports snapshot could drift stale).
 
   fastify.get(
     '/chats/pending-imports',
@@ -925,11 +940,23 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
-      const org = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { pendingImports: true },
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const groups = await prisma.discoveredChat.groupBy({
+        by: ['messenger'],
+        where: { organizationId, firstSeenAt: { gte: sevenDaysAgo } },
+        _count: true,
+        _max: { firstSeenAt: true },
       });
-      return reply.send({ pending: (org?.pendingImports as PendingImports | null) ?? {} });
+      const pending: PendingImports = {};
+      for (const g of groups) {
+        if (g._count > 0) {
+          pending[g.messenger] = {
+            count: g._count,
+            at: (g._max.firstSeenAt ?? new Date()).toISOString(),
+          };
+        }
+      }
+      return reply.send({ pending });
     },
   );
 

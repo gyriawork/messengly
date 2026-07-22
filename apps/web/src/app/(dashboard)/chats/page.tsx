@@ -182,36 +182,68 @@ function AssignOwnerDropdown({
 
 function SetLanguageDropdown({
   selectedIds,
+  selectedChats,
   onDone,
 }: {
   selectedIds: string[];
+  selectedChats: Chat[];
   onDone: () => void;
 }) {
   const [name, setName] = useState('');
   const { data: languagesData } = useLanguages();
   const setLang = useBulkSetChatLanguage();
+  const languages = languagesData?.languages ?? [];
 
-  const add = (value: string) => {
+  // all/some/none across the selected chats — lets you toggle add/remove.
+  const langStates = useMemo(() => {
+    const map = new Map<string, 'all' | 'some' | 'none'>();
+    for (const lang of languages) {
+      let count = 0;
+      for (const chat of selectedChats) {
+        if ((chat.languages ?? []).some((l) => l.id === lang.id)) count++;
+      }
+      if (count === 0) map.set(lang.id, 'none');
+      else if (count === selectedChats.length) map.set(lang.id, 'all');
+      else map.set(lang.id, 'some');
+    }
+    return map;
+  }, [languages, selectedChats]);
+
+  const run = (payload: { chatIds: string[]; languageId?: string; languageName?: string; action: 'add' | 'remove' }, okMsg: string) => {
+    setLang.mutate(payload, {
+      onSuccess: () => toast.success(okMsg),
+      onError: () => toast.error('Failed to set language'),
+    });
+  };
+
+  const toggle = (lang: { id: string; name: string }) => {
+    const state = langStates.get(lang.id) ?? 'none';
+    const action = state === 'all' ? 'remove' : 'add';
+    run(
+      { chatIds: selectedIds, languageId: lang.id, action },
+      `Language "${lang.name}" ${action === 'add' ? 'added to' : 'removed from'} ${selectedIds.length} chat(s)`,
+    );
+  };
+
+  const createAndAdd = (value: string) => {
     const v = value.trim();
     if (!v) return;
-    setLang.mutate(
-      { chatIds: selectedIds, languageName: v, action: 'add' },
-      {
-        onSuccess: () => {
-          toast.success(`Language "${v}" added to ${selectedIds.length} chat(s)`);
-          setName('');
-        },
-        onError: () => toast.error('Failed to set language'),
-      },
+    const existing = languages.find((l) => l.name.toLowerCase() === v.toLowerCase());
+    run(
+      existing
+        ? { chatIds: selectedIds, languageId: existing.id, action: 'add' }
+        : { chatIds: selectedIds, languageName: v, action: 'add' },
+      `Language "${v}" added to ${selectedIds.length} chat(s)`,
     );
+    setName('');
   };
 
   return (
     <>
       <div className="fixed inset-0 z-10" onClick={onDone} />
-      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+      <div className="absolute left-0 top-full z-20 mt-1 w-60 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
         <p className="px-1 pb-1.5 text-xs font-medium text-slate-400">Add a language (pick or create)</p>
-        <form onSubmit={(e) => { e.preventDefault(); add(name); }} className="flex gap-1.5">
+        <form onSubmit={(e) => { e.preventDefault(); createAndAdd(name); }} className="flex gap-1.5">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -221,7 +253,7 @@ function SetLanguageDropdown({
             className="min-w-0 flex-1 rounded-lg border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
           <datalist id="language-options">
-            {(languagesData?.languages ?? []).map((l) => (
+            {languages.map((l) => (
               <option key={l.id} value={l.name} />
             ))}
           </datalist>
@@ -233,18 +265,37 @@ function SetLanguageDropdown({
             Add
           </button>
         </form>
-        {(languagesData?.languages ?? []).length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {(languagesData?.languages ?? []).map((l) => (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => add(l.name)}
-                className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 transition-colors hover:bg-slate-200"
-              >
-                + {l.name}
-              </button>
-            ))}
+        {languages.length > 0 && (
+          <div className="mt-2 max-h-48 overflow-y-auto border-t border-slate-100 pt-1">
+            <p className="px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-slate-300">Toggle to add / remove</p>
+            {languages.map((lang) => {
+              const state = langStates.get(lang.id) ?? 'none';
+              return (
+                <button
+                  key={lang.id}
+                  type="button"
+                  onClick={() => toggle(lang)}
+                  disabled={setLang.isPending}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <div className={cn(
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                    state === 'all' ? 'border-accent bg-accent' : state === 'some' ? 'border-accent bg-accent/40' : 'border-slate-300',
+                  )}>
+                    {(state === 'all' || state === 'some') && (
+                      <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none">
+                        {state === 'all' ? (
+                          <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        ) : (
+                          <path d="M3 6H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        )}
+                      </svg>
+                    )}
+                  </div>
+                  <span className="truncate">{lang.name}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -445,6 +496,7 @@ function BulkActions({
         {showLangMenu && (
           <SetLanguageDropdown
             selectedIds={selectedIds}
+            selectedChats={selectedChats}
             onDone={() => { setShowLangMenu(false); }}
           />
         )}
