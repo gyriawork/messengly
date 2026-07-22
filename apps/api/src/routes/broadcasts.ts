@@ -46,9 +46,14 @@ const senderConfigSchema = z.record(
   }),
 ).optional();
 
+// Telegram rejects messages over 4096 chars with MESSAGE_TOO_LONG for EVERY
+// recipient, so the API caps at Telegram's limit (the wizard already does) —
+// a template/duplicate/API edit can no longer smuggle a too-long message past.
+const MAX_MESSAGE_LENGTH = 4096;
+
 const createBroadcastBodySchema = z.object({
   name: z.string().min(1).max(500),
-  messageText: z.string().min(1).max(10000),
+  messageText: z.string().min(1).max(MAX_MESSAGE_LENGTH),
   chatIds: z.array(z.string().uuid()).min(1).max(10000),
   scheduledAt: z.coerce.date().optional(),
   templateId: z.string().uuid().optional(),
@@ -58,7 +63,7 @@ const createBroadcastBodySchema = z.object({
 
 const updateBroadcastBodySchema = z.object({
   name: z.string().min(1).max(500).optional(),
-  messageText: z.string().min(1).max(10000).optional(),
+  messageText: z.string().min(1).max(MAX_MESSAGE_LENGTH).optional(),
   chatIds: z.array(z.string().uuid()).min(1).max(10000).optional(),
   scheduledAt: z.coerce.date().nullable().optional(),
   senderConfig: senderConfigSchema,
@@ -602,6 +607,11 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
+      // A past schedule would fire instantly but be labelled "scheduled" —
+      // reject it (small grace for clock skew / submit latency).
+      if (scheduledAt && scheduledAt.getTime() <= Date.now() - 60_000) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Scheduled time must be in the future', 422);
+      }
 
       // Validate all chatIds belong to this org. Role `user` is further
       // restricted to chats they own (via ChatOwner) — canViewAllChats only
@@ -721,6 +731,9 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+      if (scheduledAt && scheduledAt.getTime() <= Date.now() - 60_000) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Scheduled time must be in the future', 422);
       }
 
       const existing = await prisma.broadcast.findFirst({

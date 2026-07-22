@@ -32,7 +32,8 @@ const messengerParamSchema = z.object({
 
 const updateAntibanBodySchema = z.object({
   messagesPerBatch: z.number().int().min(1).max(1000),
-  delayBetweenMessages: z.number().int().min(0).max(3600),
+  // Float: the UI slider steps by 0.5s, so an int() schema 422'd on half-seconds.
+  delayBetweenMessages: z.number().min(0).max(3600),
   delayBetweenBatches: z.number().int().min(0).max(86400),
   maxMessagesPerHour: z.number().int().min(1).max(10000),
   maxMessagesPerDay: z.number().int().min(1).max(100000),
@@ -44,7 +45,7 @@ const updateAntibanBodySchema = z.object({
 const riskScoreQuerySchema = z.object({
   messenger: messengerEnum,
   messagesPerBatch: z.coerce.number().int().min(1),
-  delayBetweenMessages: z.coerce.number().int().min(0),
+  delayBetweenMessages: z.coerce.number().min(0),
   delayBetweenBatches: z.coerce.number().int().min(0),
   maxMessagesPerHour: z.coerce.number().int().min(1),
   maxMessagesPerDay: z.coerce.number().int().min(1),
