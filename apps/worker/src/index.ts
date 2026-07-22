@@ -248,6 +248,33 @@ function emitBroadcastStatus(
 }
 
 /**
+ * Persist a dead-session verdict on an integration and tell the API (which
+ * busts the cached integrations list and notifies browsers) so the UI stops
+ * showing a dead account as "Connected" (M6). No-op if the status is unchanged.
+ */
+async function markIntegrationDead(
+  organizationId: string,
+  integrationId: string,
+  messenger: string,
+  status: 'token_expired' | 'session_expired',
+): Promise<void> {
+  try {
+    const cur = await prisma.integration.findUnique({ where: { id: integrationId }, select: { status: true } });
+    if (!cur || cur.status === status) return;
+    await prisma.integration.update({ where: { id: integrationId }, data: { status } });
+    const payload = JSON.stringify({
+      event: 'integration_status_changed',
+      room: `org:${organizationId}`,
+      data: { integrationId, messenger, status },
+    });
+    await pubClient.publish('ws:events', payload);
+    log.warn(`Marked ${messenger} integration ${status}`, { integrationId });
+  } catch (err) {
+    log.warn('Failed to mark integration dead', { integrationId, error: String(err) });
+  }
+}
+
+/**
  * Send messages to a group of BroadcastChats for a single messenger,
  * respecting antiban rate limits.
  */
@@ -387,6 +414,12 @@ async function sendMessengerBatch(
         errorReason: `Adapter connection failed: ${err instanceof Error ? err.message : String(err)}`,
       },
     });
+    // If the account is actually dead (expired token/session), persist that so
+    // the UI stops showing it as "Connected" and the operator reconnects (M6).
+    const deadStatus = adapter && typeof adapter.getStatus === 'function' ? adapter.getStatus() : null;
+    if (integration && (deadStatus === 'token_expired' || deadStatus === 'session_expired')) {
+      await markIntegrationDead(organizationId, integration.id, messenger, deadStatus);
+    }
     return { sent: 0, failed: messengerChats.length, skipped: preSkipped };
   }
 
@@ -562,6 +595,12 @@ async function sendMessengerBatch(
           skipped += remainingIds.length;
         }
         log.error(`Halting ${messenger} batch`, { broadcastId, error: errorReason, skipped: remainingIds.length });
+        // A halt is usually a broken/expired session — persist it so the UI
+        // reflects the dead account (M6).
+        const deadStatus = typeof adapter.getStatus === 'function' ? adapter.getStatus() : null;
+        if (integration && (deadStatus === 'token_expired' || deadStatus === 'session_expired')) {
+          await markIntegrationDead(organizationId, integration.id, messenger, deadStatus);
+        }
         break;
       }
     }

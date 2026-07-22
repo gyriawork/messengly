@@ -276,6 +276,7 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     'new_message', 'message_updated', 'message_deleted',
     'typing', 'mark_read', 'chat_updated', 'new_reaction',
     'broadcast_status', 'broadcast_progress', 'sync_progress',
+    'integration_status_changed',
   ]);
 
   const redisSub = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -315,6 +316,14 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
       if (!parsed.event || !parsed.room || !ALLOWED_WS_EVENTS.has(parsed.event)) {
         console.warn(`[ws:redis] Rejected unknown event: ${parsed.event}`);
         return;
+      }
+
+      // A background status change (e.g. the worker found a dead account) must
+      // also bust the cached integrations list, or the browser's refetch would
+      // just re-read the 5-min-stale "connected" (M6).
+      if (parsed.event === 'integration_status_changed' && parsed.room.startsWith('org:')) {
+        const orgId = parsed.room.slice(4);
+        void cacheInvalidate(cacheKey(orgId, 'integrations', '*'));
       }
 
       io!.to(parsed.room).emit(parsed.event, parsed.data);
