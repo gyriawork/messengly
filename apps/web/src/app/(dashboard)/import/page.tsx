@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { ChevronRight, Download } from 'lucide-react';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
@@ -10,6 +11,7 @@ import { ConnectAndImportWizard } from '@/components/settings/ConnectAndImportWi
 import { NewChatsBanner, usePendingImports } from '@/components/chats/NewChatsBanner';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { useAuthStore } from '@/stores/auth';
+import { can, isAdmin } from '@/lib/permissions';
 import type { MessengerType } from '@/types/chat';
 
 const MESSENGER_LABELS: Record<MessengerType, string> = {
@@ -24,14 +26,23 @@ export default function ImportPage() {
   const { data: integrationsData, isLoading } = useIntegrations();
   const { data: pendingData } = usePendingImports();
   const [selectedMessenger, setSelectedMessenger] = useState<MessengerType | null>(null);
-  const isSuperadmin = useAuthStore((s) => s.user?.role === 'superadmin');
+  const user = useAuthStore((s) => s.user);
+  const isSuperadmin = user?.role === 'superadmin';
+  const admin = isAdmin(user);
+  const selfConnectAllowed = can(user, 'canSelfConnectMessengers');
 
   const pending = pendingData?.pending ?? {};
 
+  // A plain user only ever imports through THEIR OWN connected account (the
+  // server enforces this too — see POST /chats/import) — offering the org's
+  // shared connection here would just lead to a 403 one step later.
   const connectedMessengers = [
     ...new Set(
       (integrationsData?.integrations ?? [])
-        .filter((i) => i.status === 'connected')
+        .filter((i) =>
+          i.status === 'connected' &&
+          (admin || (i.scope === 'user' && i.userId === user?.id)),
+        )
         .map((i) => i.messenger as MessengerType),
     ),
   ].filter((m) => m !== 'gmail'); // Gmail hidden — broadcast-focused service
@@ -67,11 +78,22 @@ export default function ImportPage() {
           icon={<Download className="h-12 w-12" />}
           title="Nothing to import from yet"
           description={
-            // Only the superadmin can open Settings → Integrations; pointing
-            // anyone else there would be a dead end.
-            isSuperadmin
+            // Admin+ manages connections from Settings → Integrations. A
+            // self-connecting user has their own "My Messengers" entry point
+            // (the action link below); anyone else has no way to fix this
+            // themselves and needs to ask whoever manages the workspace.
+            admin
               ? 'Connect a messenger in Settings first, then come back here to bring in its chats.'
-              : 'No messengers are connected yet. Ask your workspace operator to connect one, then come back here.'
+              : selfConnectAllowed
+                ? "You haven't connected any messengers yet."
+                : 'No messengers are connected yet. Ask your workspace operator to connect one, then come back here.'
+          }
+          action={
+            !admin && selfConnectAllowed ? (
+              <Link href="/settings" className="text-sm font-medium text-accent hover:underline">
+                Connect one in Settings → My Messengers
+              </Link>
+            ) : undefined
           }
         />
       ) : (

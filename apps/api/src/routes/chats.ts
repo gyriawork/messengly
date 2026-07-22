@@ -559,6 +559,29 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      // A plain user may only import through their OWN connected account —
+      // this route previously never checked at all, so a user could import
+      // via whichever account the caller of list-chats/import-with-history
+      // had resolved (or, with a hand-crafted request, any org connection).
+      // Admin+ is unrestricted, matching every other route in this file.
+      if (request.user.role === 'user') {
+        const own = await prisma.integration.findUnique({
+          where: {
+            messenger_organizationId_userId_scope: {
+              messenger, organizationId, userId: request.user.id, scope: 'user',
+            },
+          },
+        });
+        if (!own || own.status !== 'connected') {
+          return sendError(
+            reply,
+            'AUTH_INSUFFICIENT_PERMISSIONS',
+            `You can only import ${messenger} chats through your own connected account. Connect ${messenger} first.`,
+            403,
+          );
+        }
+      }
+
       // Normalize input: accept both string[] and {externalChatId, name, chatType}[]
       const chatItems = rawChatIds.map((item) =>
         typeof item === 'string'
@@ -639,18 +662,26 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
       const userId = request.user.id;
+      const isPlainUser = request.user.role === 'user';
 
       // Resolve the integration this import runs through: the caller's own
       // personal connection if they have one (Task 3/4 self-connect), else
-      // the org's oldest connected row — unchanged from pre-v2.2 behavior
-      // for orgs where only the shared/admin-connected account exists.
-      const integration = await resolveIntegration(messenger, organizationId, { userId });
+      // the org's oldest connected row for admin+ — unchanged from pre-v2.2
+      // behavior for orgs where only the shared/admin-connected account
+      // exists. A plain user NEVER falls back to someone else's connection —
+      // they either have their own, or this import doesn't run.
+      const integration = await resolveIntegration(messenger, organizationId, {
+        userId,
+        ownOnly: isPlainUser,
+      });
 
       if (!integration) {
         return sendError(
           reply,
           'VALIDATION_ERROR',
-          `No connected ${messenger} account found. Ask your administrator to connect it first.`,
+          isPlainUser
+            ? `You don't have a connected ${messenger} account. Connect it in Settings → My Messengers first.`
+            : `No connected ${messenger} account found. Ask your administrator to connect it first.`,
           400,
         );
       }

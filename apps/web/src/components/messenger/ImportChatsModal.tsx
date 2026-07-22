@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { X, Loader2 } from 'lucide-react';
 import { useIntegrations } from '@/hooks/useIntegrations';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { ConnectAndImportWizard } from '@/components/settings/ConnectAndImportWizard';
+import { useAuthStore } from '@/stores/auth';
+import { can, isAdmin } from '@/lib/permissions';
 import type { MessengerType } from '@/types/chat';
 import { cn } from '@/lib/utils';
 
@@ -23,11 +26,20 @@ const MESSENGER_LABELS: Record<MessengerType, string> = {
 export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
   const { data: integrationsData, isLoading } = useIntegrations();
   const [selectedMessenger, setSelectedMessenger] = useState<MessengerType | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const admin = isAdmin(user);
+  const selfConnectAllowed = can(user, 'canSelfConnectMessengers');
 
+  // A plain user only ever imports through THEIR OWN connected account (the
+  // server enforces this too — see POST /chats/import) — offering the org's
+  // shared connection here would just lead to a 403 one step later.
   const connectedMessengers = [
     ...new Set(
       (integrationsData?.integrations ?? [])
-        .filter((i) => i.status === 'connected')
+        .filter((i) =>
+          i.status === 'connected' &&
+          (admin || (i.scope === 'user' && i.userId === user?.id)),
+        )
         .map((i) => i.messenger as MessengerType),
     ),
   ];
@@ -72,11 +84,24 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
         {!isLoading && connectedMessengers.length === 0 && (
           <div className="py-8 text-center">
             <p className="text-sm text-slate-500">
-              No messengers connected yet.
+              {admin || !selfConnectAllowed
+                ? 'No messengers connected yet.'
+                : "You haven't connected any messengers yet."}
             </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Go to Settings to connect a messenger first.
-            </p>
+            {!admin && selfConnectAllowed ? (
+              <Link
+                href="/settings"
+                className="mt-1 inline-block text-xs font-medium text-accent hover:underline"
+              >
+                Connect one in Settings → My Messengers
+              </Link>
+            ) : (
+              <p className="mt-1 text-xs text-slate-400">
+                {admin
+                  ? 'Go to Settings to connect a messenger first.'
+                  : 'Ask your workspace operator to connect one first.'}
+              </p>
+            )}
           </div>
         )}
 
