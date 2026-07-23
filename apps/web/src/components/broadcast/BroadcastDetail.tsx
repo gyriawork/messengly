@@ -194,7 +194,13 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   // The detail API returns recipients grouped under `chatsByStatus`; normalize
   // to a flat list so the breakdown and failed-recipients table work.
   const allChats = normalizeChats(broadcast);
-  const messengerBreakdown = getMessengerBreakdown(allChats);
+  // While live, the per-messenger cards read from the same fresh poll as the top
+  // bar and the logs — the full object (and its `allChats`) only refetches on a
+  // status transition, so deriving the breakdown from it lags mid-send.
+  const messengerBreakdown =
+    isLive && liveStats?.byMessenger
+      ? liveStats.byMessenger
+      : getMessengerBreakdown(allChats);
   // `retry_exhausted` is a failure the operator may not retry — show it alongside
   // the plain failures rather than hiding it.
   const failedChats = allChats.filter(

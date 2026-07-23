@@ -50,6 +50,8 @@ export interface BroadcastStats {
   sentAt: string | null;
   total: number;
   counts: Record<string, number>;
+  /** Live per-messenger totals so the breakdown cards stay in sync with the poll. */
+  byMessenger: Array<{ messenger: string; total: number; sent: number; failed: number }>;
   recent: Array<{
     chatId: string;
     chatName: string;

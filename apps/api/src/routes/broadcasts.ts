@@ -565,6 +565,31 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         },
       });
 
+      // Per-messenger totals for the live breakdown cards. One grouped query
+      // (messenger × status → count) so the poll stays cheap even on a big send —
+      // messenger lives on Chat, so this joins rather than a plain groupBy.
+      const byMessengerRows = await prisma.$queryRaw<
+        Array<{ messenger: string; status: string; count: bigint }>
+      >`
+        SELECT c."messenger" AS messenger, bc."status" AS status, COUNT(*)::bigint AS count
+        FROM "BroadcastChat" bc
+        JOIN "Chat" c ON c."id" = bc."chatId"
+        WHERE bc."broadcastId" = ${id}
+        GROUP BY c."messenger", bc."status"
+      `;
+      const byMessengerMap: Record<string, { total: number; sent: number; failed: number }> = {};
+      for (const row of byMessengerRows) {
+        const bucket = (byMessengerMap[row.messenger] ??= { total: 0, sent: 0, failed: 0 });
+        const n = Number(row.count);
+        bucket.total += n;
+        if (row.status === 'sent') bucket.sent += n;
+        if (row.status === 'failed') bucket.failed += n;
+      }
+      const byMessenger = Object.entries(byMessengerMap).map(([messenger, s]) => ({
+        messenger,
+        ...s,
+      }));
+
       return reply.send({
         id: broadcast.id,
         status: broadcast.status,
@@ -572,6 +597,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         sentAt: broadcast.sentAt,
         total,
         counts,
+        byMessenger,
         recent: recent.map((r) => ({
           chatId: r.chatId,
           chatName: r.chat?.name ?? 'Unknown chat',
