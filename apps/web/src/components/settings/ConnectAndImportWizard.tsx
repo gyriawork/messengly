@@ -11,6 +11,9 @@ import {
   Download,
   MessageSquare,
   CalendarClock,
+  CircleStop,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanizeError } from '@/lib/errors';
@@ -192,9 +195,17 @@ function ChatSelector({
 function ImportProgressView({
   progress,
   messenger,
+  batchInfo,
+  onStop,
+  stopRequested,
 }: {
   progress: ImportProgress;
   messenger: MessengerType;
+  /** "Batch 2 of 4" — shown only when the import spans multiple batches. */
+  batchInfo?: { current: number; total: number } | null;
+  /** Stop the import between batches; the current batch still finishes. */
+  onStop?: () => void;
+  stopRequested?: boolean;
 }) {
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
@@ -215,6 +226,11 @@ function ImportProgressView({
             style={{ width: `${pct}%` }}
           />
         </div>
+        {batchInfo && batchInfo.total > 1 && (
+          <p className="text-center text-xs text-slate-400">
+            Batch {batchInfo.current} of {batchInfo.total}
+          </p>
+        )}
         {progress.currentName && (
           <p className="text-center text-xs text-slate-500">
             Loading messages from <span className="font-medium">{progress.currentName}</span>
@@ -222,6 +238,16 @@ function ImportProgressView({
         )}
       </div>
       <Loader2 className="h-5 w-5 animate-spin text-accent" />
+      {onStop && (
+        <button
+          onClick={onStop}
+          disabled={stopRequested}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+        >
+          <CircleStop className="h-4 w-4" />
+          {stopRequested ? 'Stopping after this batch...' : 'Stop import'}
+        </button>
+      )}
     </div>
   );
 }
@@ -243,10 +269,19 @@ export function ConnectAndImportWizard({
   const [account, setAccount] = useState<{ name: string; handle?: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<ImportProgress>({ done: 0, total: 0, currentName: '' });
-  const [importResult, setImportResult] = useState<{ imported: number; failed: number } | null>(null);
+  const [importResult, setImportResult] = useState<
+    { imported: number; failed: number; stopped?: boolean; error?: string } | null
+  >(null);
+  // "Batch 2 of 4" indicator + Stop-between-batches state for large imports.
+  const [batchInfo, setBatchInfo] = useState<{ current: number; total: number } | null>(null);
+  const [stopRequested, setStopRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const importingRef = useRef(false);
+  // Import runs in chunks (the server caps one import-with-history request at
+  // 200 chats). This tracks how many chats finished in prior chunks so the
+  // live per-chunk WS progress can be offset into an overall count.
+  const batchStateRef = useRef({ offset: 0, total: 0 });
 
   // Full-window layout that leaves the sidebar visible and clickable. On desktop
   // the panel starts where the main content card starts (shell padding + sidebar
@@ -306,15 +341,21 @@ export function ConnectAndImportWizard({
 
     const handleProgress = (data: ImportProgress) => {
       if (importingRef.current) {
-        setProgress(data);
+        // The server reports progress for the CURRENT chunk; offset it into
+        // the overall count across all chunks.
+        setProgress({
+          done: batchStateRef.current.offset + data.done,
+          total: batchStateRef.current.total || data.total,
+          currentName: data.currentName,
+        });
       }
     };
 
-    const handleComplete = (data: { imported: number; failed: number }) => {
+    const handleComplete = () => {
+      // Fires once per chunk. The HTTP loop in handleImport drives the final
+      // "done" transition; here we only refresh so imported chats appear
+      // progressively as each chunk lands.
       if (importingRef.current) {
-        importingRef.current = false;
-        setImportResult(data);
-        setStep('done');
         queryClient.invalidateQueries({ queryKey: ['chats'] });
         queryClient.invalidateQueries({ queryKey: ['pending-imports'] });
       }
@@ -341,29 +382,78 @@ export function ConnectAndImportWizard({
         chatType: c.chatType as 'direct' | 'group' | 'channel' | 'unknown',
       }));
 
+    const total = selectedChats.length;
+    // The server caps one import-with-history request at 200 chats (each also
+    // pulls message history), so send in chunks and aggregate the results.
+    const IMPORT_CHUNK_SIZE = 200;
+    const chunkCount = Math.ceil(total / IMPORT_CHUNK_SIZE);
+
     setStep('importing');
-    setProgress({ done: 0, total: selectedChats.length, currentName: '' });
+    setProgress({ done: 0, total, currentName: '' });
+    setStopRequested(false);
+    setBatchInfo(chunkCount > 1 ? { current: 1, total: chunkCount } : null);
     importingRef.current = true;
+    batchStateRef.current = { offset: 0, total };
+
+    const aggregate = { imported: 0, failed: 0 };
+    let stopped = false;
 
     try {
-      const result = await api.post<{ imported: unknown[]; count: number; failed: number }>(
-        '/api/chats/import-with-history',
-        { messenger, chats: selectedChats },
-      );
-      // HTTP response also carries the result — use it if WS didn't fire
-      if (importingRef.current) {
-        importingRef.current = false;
-        setImportResult({ imported: result.count, failed: result.failed });
+      let batchIndex = 0;
+      for (let start = 0; start < selectedChats.length; start += IMPORT_CHUNK_SIZE, batchIndex++) {
+        // Stop was requested — the batch already in flight finished, so end here
+        // with whatever landed and skip the rest.
+        if (!importingRef.current) {
+          stopped = true;
+          break;
+        }
+        if (chunkCount > 1) setBatchInfo({ current: batchIndex + 1, total: chunkCount });
+        const chunk = selectedChats.slice(start, start + IMPORT_CHUNK_SIZE);
+        const result = await api.post<{ imported: unknown[]; count: number; failed: number }>(
+          '/api/chats/import-with-history',
+          { messenger, chats: chunk },
+        );
+        aggregate.imported += result.count ?? 0;
+        aggregate.failed += result.failed ?? 0;
+        // Advance the overall progress by this whole chunk (the per-message WS
+        // progress for the NEXT chunk is offset from here).
+        batchStateRef.current.offset = start + chunk.length;
+        setProgress({ done: batchStateRef.current.offset, total, currentName: '' });
+      }
+
+      importingRef.current = false;
+      setImportResult({ imported: aggregate.imported, failed: aggregate.failed, stopped });
+      setStep('done');
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-imports'] });
+    } catch (err) {
+      importingRef.current = false;
+      const message = humanizeError(err, 'Import failed');
+      // Earlier batches already imported — don't pretend nothing happened. Show
+      // the partial result plus the error so the user can retry the rest (safe:
+      // re-importing existing chats just re-links them, no duplicates).
+      if (aggregate.imported > 0) {
+        setImportResult({
+          imported: aggregate.imported,
+          failed: Math.max(0, total - aggregate.imported),
+          error: message,
+        });
         setStep('done');
         queryClient.invalidateQueries({ queryKey: ['chats'] });
         queryClient.invalidateQueries({ queryKey: ['pending-imports'] });
+      } else {
+        setError(message);
+        setStep('error');
       }
-    } catch (err) {
-      importingRef.current = false;
-      setError(humanizeError(err, 'Import failed'));
-      setStep('error');
     }
   }, [selected, chats, messenger, queryClient]);
+
+  // Stop a large multi-batch import: the current batch finishes, the rest are
+  // skipped. importingRef flips synchronously so the loop sees it next tick.
+  const handleStopImport = useCallback(() => {
+    importingRef.current = false;
+    setStopRequested(true);
+  }, []);
 
   // ── Selection helpers ──
   const toggleChat = (id: string) => {
@@ -523,28 +613,55 @@ export function ConnectAndImportWizard({
         {/* ── Step: Importing ── */}
         {step === 'importing' && (
           <div className="my-auto w-full">
-            <ImportProgressView progress={progress} messenger={messenger} />
+            <ImportProgressView
+              progress={progress}
+              messenger={messenger}
+              batchInfo={batchInfo}
+              onStop={handleStopImport}
+              stopRequested={stopRequested}
+            />
           </div>
         )}
 
         {/* ── Step: Done ── */}
         {step === 'done' && importResult && (
           <div className="my-auto flex flex-col items-center gap-4 py-6">
-            <CheckCircle2 className="h-14 w-14 text-emerald-500" />
+            {importResult.stopped || importResult.error ? (
+              <AlertTriangle className="h-14 w-14 text-amber-500" />
+            ) : (
+              <CheckCircle2 className="h-14 w-14 text-emerald-500" />
+            )}
             <div className="text-center">
               <p className="text-lg font-semibold text-slate-900">
                 {importResult.imported} {importResult.imported === 1 ? 'chat' : 'chats'} imported!
               </p>
-              {importResult.failed > 0 && (
+              {importResult.stopped ? (
+                <p className="mt-1 text-sm text-amber-600">
+                  Import stopped — the remaining chats were not imported.
+                </p>
+              ) : importResult.error ? (
+                <p className="mt-1 text-sm text-amber-600">
+                  {importResult.failed} {importResult.failed === 1 ? 'chat' : 'chats'} didn&apos;t import: {importResult.error}
+                </p>
+              ) : importResult.failed > 0 ? (
                 <p className="mt-1 text-sm text-amber-600">
                   {importResult.failed} {importResult.failed === 1 ? 'chat' : 'chats'} failed to import.
                 </p>
-              )}
+              ) : null}
               <p className="mt-1 text-xs text-slate-500">
                 Your chats are in — recent messages loaded, older history fills in over time.
               </p>
             </div>
             <div className="flex gap-2">
+              {importResult.error && (
+                <button
+                  onClick={handleImport}
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-200 px-4 py-2.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-50"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Try Again
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
