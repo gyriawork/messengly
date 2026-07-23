@@ -16,6 +16,7 @@ const path = require('path');
 const logger = require('../util/logger');
 const S = require('./selectors');
 const { getProxyConfig } = require('./proxy');
+const { disableWebAuthn } = require('./webauthn');
 const { sessionPathFor } = require('./sessionPaths');
 
 const VIEWPORT = { width: 1600, height: 900 };
@@ -102,6 +103,11 @@ async function start(sessionKey = 'default', driver = null) {
       locale: 'ru-RU',
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
     });
+
+    // Passkey/FIDO 2FA opens a NATIVE browser dialog that the screenshot
+    // stream can't show or click. Hiding WebAuthn makes Microsoft offer the
+    // in-page alternatives (password / authenticator / email code) instead.
+    await disableWebAuthn(session.context);
 
     session.page = await session.context.newPage();
 

@@ -17,6 +17,7 @@ const fs = require('fs');
 const logger = require('../util/logger');
 const config = require('../config');
 const { getProxyConfig } = require('./proxy');
+const { disableWebAuthn } = require('./webauthn');
 const { sessionPathFor } = require('./sessionPaths');
 
 const MAX_LIVE_SESSIONS = parseInt(process.env.TEAMS_MAX_LIVE_SESSIONS || '3', 10);
@@ -126,6 +127,9 @@ async function ensurePage(key = 'default') {
 
   const context = await browser.newContext(contextOpts);
   context.setDefaultTimeout(15_000);
+  // Same WebAuthn hiding as the login browser — a mid-scan re-auth prompt
+  // must fall back to in-page methods, never a native passkey dialog.
+  await disableWebAuthn(context);
 
   const page = await context.newPage();
   page.setDefaultNavigationTimeout(60_000);
