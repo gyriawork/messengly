@@ -19,12 +19,29 @@ const config = require('../config');
 const { getProxyConfig } = require('./proxy');
 const { disableWebAuthn } = require('./webauthn');
 const { sessionPathFor } = require('./sessionPaths');
+const lock = require('./lock');
 
 const MAX_LIVE_SESSIONS = parseInt(process.env.TEAMS_MAX_LIVE_SESSIONS || '3', 10);
 
 let browser = null;
 /** @type {Map<string, { context: import('playwright').BrowserContext, page: import('playwright').Page, lastUsedAt: number }>} */
 const sessions = new Map();
+
+// ── Idle-close bookkeeping ──
+// Chromium was never torn down while idle: a single scan at 3am kept a full
+// browser (+ Teams renderer) resident all day, and it slowly leaked. We now
+// close it after IDLE_CLOSE_MS of inactivity and relaunch on the next request.
+let lastActivityAt = Date.now();
+let idleReaperTimer = null;
+let idleClosing = false;
+// Set while WE close the browser on purpose (idle-close / shutdown) so the
+// 'disconnected' handler doesn't log it as an unexpected crash.
+let intentionalClose = false;
+
+/** Mark browser activity so the idle reaper doesn't close a browser in use. */
+function touch() {
+  lastActivityAt = Date.now();
+}
 
 function hasSession(key = 'default') {
   return fs.existsSync(sessionPathFor(key));
@@ -38,18 +55,27 @@ async function launchBrowser() {
   if (proxy) logger.info({ server: proxy.server }, 'Launching browser via proxy');
   browser = await chromium.launch({
     headless: process.env.HEADED !== 'true',
-    args: ['--disable-blink-features=AutomationControlled'],
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      // Railway's default /dev/shm is only 64MB; without this a busy Teams
+      // renderer can crash (and drop an in-flight send). Writes to /tmp instead.
+      '--disable-dev-shm-usage',
+      // Headless Teams needs no GPU — drops the GPU helper process (~30-60MB).
+      '--disable-gpu',
+    ],
     ...(proxy ? { proxy } : {}),
   });
 
   // Every live session's context dies with the browser process — clear them
   // all so the next ensurePage() call for any key relaunches from scratch.
   browser.on('disconnected', () => {
+    if (intentionalClose) return; // idle-close / shutdown already handle state
     logger.warn('Browser disconnected unexpectedly — resetting state');
     browser = null;
     sessions.clear();
   });
 
+  startIdleReaper();
   logger.info('Browser launched');
 }
 
@@ -102,6 +128,7 @@ async function evictLruIfNeeded(excludeKey) {
 
 /** Launch on demand, then return that session's page. */
 async function ensurePage(key = 'default') {
+  touch();
   const existing = sessions.get(key);
   if (existing) {
     existing.lastUsedAt = Date.now();
@@ -135,11 +162,15 @@ async function ensurePage(key = 'default') {
   page.setDefaultNavigationTimeout(60_000);
 
   sessions.set(key, { context, page, lastUsedAt: Date.now() });
+  // Mark completion too: launching Chromium cold can take a few seconds, so
+  // refresh the idle clock now that the page is actually ready to use.
+  touch();
   logger.info({ key }, 'Session page ready');
   return page;
 }
 
 function getPage(key = 'default') {
+  touch();
   const entry = sessions.get(key);
   if (!entry) {
     throw new Error(`Browser not launched for session "${key}" — call ensurePage() first`);
@@ -149,6 +180,7 @@ function getPage(key = 'default') {
 }
 
 function getContext(key = 'default') {
+  touch();
   return sessions.get(key)?.context ?? null;
 }
 
@@ -158,18 +190,63 @@ async function saveSession(key = 'default') {
   await persistState(key, entry.context);
 }
 
-/** Close everything — used only at process shutdown. Saves every live session first. */
+/** Close everything — at process shutdown or on idle. Saves every live session first. */
 async function close(opts = {}) {
   const { saveSession: doSave = true } = opts;
   const b = browser;
   if (!b) return;
 
-  for (const key of [...sessions.keys()]) {
-    await closeSession(key, { save: doSave });
+  intentionalClose = true;
+  try {
+    for (const key of [...sessions.keys()]) {
+      await closeSession(key, { save: doSave });
+    }
+    browser = null;
+    await b.close().catch(() => {});
+    logger.info({ saved: doSave }, 'Browser closed');
+  } finally {
+    intentionalClose = false;
   }
-  browser = null;
-  await b.close().catch(() => {});
-  logger.info({ saved: doSave }, 'Browser closed');
+}
+
+/**
+ * Close the shared browser after a stretch of inactivity so its memory (which
+ * also slowly leaks) isn't held 24/7 between broadcasts. State is persisted
+ * first, so the next ensurePage() relaunches transparently from the saved
+ * session file (~3-6s cold start). Never fires while any session lock is held
+ * or queued, so it can't interrupt a scan or a send.
+ */
+async function reapIfIdle() {
+  if (!browser || idleClosing) return;
+  if (Date.now() - lastActivityAt < config.IDLE_CLOSE_MS) return;
+  if (lock.snapshot().some((s) => s.locked || s.queueDepth > 0)) return;
+
+  idleClosing = true;
+  try {
+    logger.info(
+      { idleForMs: Date.now() - lastActivityAt, liveSessions: sessions.size },
+      'Idle timeout reached — closing browser to free memory',
+    );
+    await close({ saveSession: true });
+  } catch (err) {
+    logger.error({ err: err.message }, 'Idle-close failed');
+  } finally {
+    idleClosing = false;
+  }
+}
+
+/** Start the once-per-interval idle reaper (idempotent; unref'd so it never blocks exit). */
+function startIdleReaper() {
+  if (idleReaperTimer || config.IDLE_CLOSE_MS <= 0) return;
+  idleReaperTimer = setInterval(() => { reapIfIdle().catch(() => {}); }, config.IDLE_CHECK_INTERVAL_MS);
+  if (typeof idleReaperTimer.unref === 'function') idleReaperTimer.unref();
+}
+
+function stopIdleReaper() {
+  if (idleReaperTimer) {
+    clearInterval(idleReaperTimer);
+    idleReaperTimer = null;
+  }
 }
 
 /**
@@ -208,5 +285,6 @@ module.exports = {
   ensurePage, getPage, getContext,
   saveSession, close, refreshSession, destroySession,
   hasSession, listLiveSessionKeys,
+  startIdleReaper, stopIdleReaper,
   SESSION_PATH: config.SESSION_PATH,
 };

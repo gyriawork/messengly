@@ -73,6 +73,7 @@ const server = app.listen(config.PORT, config.HOST, () => {
 async function shutdown(signal) {
   logger.info({ signal }, 'Shutting down');
   server.close();
+  browser.stopIdleReaper();
   await browser.close().catch(() => {});
   process.exit(0);
 }

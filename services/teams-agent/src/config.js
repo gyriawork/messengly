@@ -32,6 +32,17 @@ module.exports = {
   /** Max time a request will wait for the single browser. Broadcasts queue here. */
   LOCK_TIMEOUT_MS: parseInt(process.env.TEAMS_LOCK_TIMEOUT_MS || '600000', 10),
 
+  /**
+   * Idle-close: after this long with no scan/send/status activity, the shared
+   * Chromium (and every live Teams context) is closed to free memory; the next
+   * request relaunches it transparently from the saved session file. Set to 0 to
+   * disable. This is the main guard against the browser sitting resident — and
+   * slowly leaking — 24/7 between broadcasts. The reaper only fires when no
+   * session lock is held or queued, so it never interrupts an in-flight send.
+   */
+  IDLE_CLOSE_MS: parseInt(process.env.TEAMS_IDLE_CLOSE_MS || '600000', 10),
+  IDLE_CHECK_INTERVAL_MS: parseInt(process.env.TEAMS_IDLE_CHECK_INTERVAL_MS || '60000', 10),
+
   /** Cap on downloaded attachment size (bytes). */
   MAX_ATTACHMENT_BYTES: parseInt(process.env.TEAMS_MAX_ATTACHMENT_BYTES || String(30 * 1024 * 1024), 10),
 };
